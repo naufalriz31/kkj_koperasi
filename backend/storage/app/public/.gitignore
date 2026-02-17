@@ -1,2 +1,21 @@
-*
-!.gitignore
+# Abaikan folder library (sangat berat)
+node_modules/
+backend/vendor/
+
+# Abaikan file rahasia (sangat penting untuk keamanan)
+.env
+backend/.env
+kkjkoperasi/.env
+
+# Abaikan hasil build dan temporary files
+dist/
+backend/storage/*.key
+backend/storage/framework/cache/data/*
+backend/storage/framework/sessions/*
+backend/storage/framework/views/*
+backend/storage/logs/*
+
+# Abaikan file sistem
+.DS_Store
+Thumbs.db
+.vscode/

@@ -3,15 +3,9 @@ import { PawnTransaction, BalanceTransaction } from '../types';
 
 const API = axios.create({
     baseURL: 'http://127.0.0.1:8000/api',
-    headers: {
-        'Content-Type': 'application/json',
-    }
+    // Hapus header Content-Type global agar otomatis menyesuaikan saat ada upload file
 });
 
-/**
- * Otomatis memasukkan Token ke setiap permintaan.
- * Ini penting agar Laravel mengenali siapa yang sedang login.
- */
 API.interceptors.request.use((config) => {
     const token = localStorage.getItem('token');
     if (token && config.headers) {
@@ -22,16 +16,15 @@ API.interceptors.request.use((config) => {
 
 // --- DAFTAR FUNGSI API ---
 
-// Menyimpan pengajuan gadai baru ke MySQL
-export const ajukanGadai = (data: Partial<PawnTransaction>) => 
-    API.post<{message: string, data: PawnTransaction}>('/pawn', data);
+// Sesuaikan endpoint dengan routes/api.php
+export const ajukanGadai = (data: FormData | Partial<PawnTransaction>) => 
+    API.post<{message: string, data: PawnTransaction}>('/pawn/apply', data);
 
-// Mengambil riwayat gadai dari database
 export const getRiwayatGadai = () => 
-    API.get<PawnTransaction[]>('/pawn');
+    API.get<PawnTransaction[]>('/pawn/history');
 
-// Mengirim transaksi saldo (Top Up / Withdraw)
-export const updateSaldo = (data: Partial<BalanceTransaction>) => 
-    API.post<{message: string, data: BalanceTransaction}>('/balance', data);
+// Gunakan FormData jika Anda mengirim file bukti transfer (proof)
+export const updateSaldo = (data: FormData | Partial<BalanceTransaction>) => 
+    API.post<{message: string, data: BalanceTransaction}>('/balance/topup', data);
 
 export default API;
