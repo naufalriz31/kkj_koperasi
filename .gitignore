@@ -1,0 +1,5 @@
+/backend/vendor
+/backend/.env
+/kkjkoperasi/node_modules
+/kkjkoperasi/dist
+.env
