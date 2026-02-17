@@ -1,0 +1,223 @@
+import React, { useEffect, useState } from 'react';
+import {
+    Users, ChevronRight, LogOut, ShieldCheck,
+    ArrowRightLeft, PieChart, Megaphone, AlertTriangle, Scale,
+    ShoppingBag, TrendingUp, Receipt, Banknote, Warehouse, Building, Wallet,
+    Loader2
+} from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
+import API from '../../api/api'; // Menggunakan Axios
+import { useAuthStore } from '../../store/useAuthStore';
+import { cn } from '../../lib/utils';
+import logoKKJ from '../../assets/Logo-kkj.png'; 
+
+export const AdminDashboard = () => {
+    const { logout, user } = useAuthStore();
+    const navigate = useNavigate();
+    const [loading, setLoading] = useState(true);
+
+    const [stats, setStats] = useState({
+        pendingUsers: 0,
+        pendingTx: 0,
+        pendingLoans: 0,
+        pendingRestructures: 0,
+        pendingTamasa: 0,
+        pendingPawn: 0,
+        pendingOrders: 0,
+        pendingLHU: 0,
+        activeInflip: 0,
+        pendingWithdrawals: 0, 
+    });
+
+    const [firstRestructureId, setFirstRestructureId] = useState<string | null>(null);
+
+    const fetchStats = async () => {
+        try {
+            // Panggil API Laravel: GET /admin/stats
+            // Endpoint ini mengembalikan semua hitungan (count) dalam satu respons JSON
+            const response = await API.get('/admin/stats');
+            const data = response.data;
+
+            setStats({
+                pendingUsers: data.pending_users_count || 0,
+                pendingTx: data.pending_transactions_count || 0,
+                pendingLoans: data.pending_loans_count || 0,
+                pendingRestructures: data.pending_restructures_count || 0,
+                pendingTamasa: data.pending_tamasa_count || 0,
+                pendingPawn: data.pending_pawn_count || 0,
+                pendingOrders: data.pending_orders_count || 0,
+                pendingLHU: data.pending_lhu_count || 0,
+                activeInflip: data.active_inflip_count || 0,
+                pendingWithdrawals: data.pending_withdrawals_count || 0,
+            });
+
+            if (data.first_restructure_id) {
+                setFirstRestructureId(data.first_restructure_id);
+            }
+        } catch (error) {
+            console.error("Gagal mengambil statistik:", error);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        fetchStats();
+
+        // Menggunakan Polling setiap 30 detik sebagai pengganti Real-time Supabase
+        const interval = setInterval(fetchStats, 30000); 
+
+        return () => clearInterval(interval);
+    }, []);
+
+    const handleLogout = async () => {
+        const confirm = window.confirm("Akhiri sesi admin?");
+        if (!confirm) return;
+        try {
+            await API.post('/logout');
+        } catch (e) {}
+        logout();
+        navigate('/login');
+    };
+
+    return (
+        <div className="min-h-screen bg-[#F8FAFC] pb-12 font-sans">
+            {/* TOP BAR */}
+            <div className="bg-white border-b border-slate-200 sticky top-0 z-50 px-6 py-4 shadow-sm">
+                <div className="max-w-[1400px] mx-auto flex justify-between items-center">
+                    <div className="flex items-center gap-3">
+                        <div className="bg-white border border-green-50 p-1.5 rounded-xl shadow-sm h-11 w-11 flex items-center justify-center">
+                            <img src={logoKKJ} alt="Logo KKJ" className="w-full h-full object-contain" />
+                        </div>
+                        <div className="flex flex-col">
+                            <h1 className="font-black text-slate-900 tracking-tighter text-lg uppercase leading-none">
+                                KKJ <span className="text-[#136f42]">Control Center</span>
+                            </h1>
+                            <span className="text-[10px] font-bold text-slate-400 tracking-widest uppercase">Admin Panel</span>
+                        </div>
+                    </div>
+
+                    <div className="flex items-center gap-4">
+                        <div className="hidden md:flex items-center gap-2 bg-slate-50 px-3 py-1.5 rounded-full border border-slate-200">
+                            <div className="w-2 h-2 rounded-full bg-[#aeea00] animate-pulse shadow-[0_0_10px_#aeea00]" />
+                            <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">System Active</span>
+                        </div>
+                        <button onClick={handleLogout} className="p-2.5 hover:bg-rose-50 text-slate-400 hover:text-rose-600 rounded-xl transition-all border border-transparent hover:border-rose-100">
+                            <LogOut size={18} />
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div className="max-w-[1400px] mx-auto px-6 pt-8 space-y-8">
+                {/* HERO SECTION */}
+                <div className="relative bg-[#136f42] rounded-[2rem] p-8 overflow-hidden shadow-2xl shadow-green-900/20">
+                    <div className="absolute right-0 top-0 w-[500px] h-[500px] bg-white/5 rounded-full blur-[100px] -mr-40 -mt-40 pointer-events-none" />
+                    <div className="relative z-10 flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+                        <div className="space-y-2">
+                            <h1 className="text-3xl md:text-4xl font-[1000] text-white tracking-tighter uppercase leading-none">
+                                Halo, {user?.name?.split(' ')[0] || 'Admin'}
+                            </h1>
+                            <p className="text-green-100/70 text-xs font-bold uppercase tracking-[0.3em]">Master Administrator Panel</p>
+                        </div>
+                        <Link to="/admin/labarugi" className="bg-white/10 hover:bg-white/20 text-white px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all border border-white/10 backdrop-blur-sm flex items-center gap-2 shadow-lg">
+                            <PieChart size={14} /> Keuangan Real-time
+                        </Link>
+                    </div>
+                </div>
+
+                {/* NOTIFIKASI URGENT */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 animate-in fade-in slide-in-from-bottom-4">
+                    {stats.pendingWithdrawals > 0 && <AlertCard to="/admin/simpanan" title={`${stats.pendingWithdrawals} Request Tarik Tunai`} type="danger" />}
+                    {stats.pendingLoans > 0 && <AlertCard to="/admin/pembiayaan" title={`${stats.pendingLoans} Pengajuan Pinjaman`} type="danger" />}
+                    {stats.pendingRestructures > 0 && <AlertCard to={firstRestructureId ? `/admin/pembiayaan/${firstRestructureId}` : '/admin/pembiayaan'} title={`${stats.pendingRestructures} Request Tenor`} type="danger" />}
+                    {stats.pendingUsers > 0 && <AlertCard to="/admin/verifikasi" title={`${stats.pendingUsers} Verifikasi Anggota`} type="warning" />}
+                    {stats.pendingLHU > 0 && <AlertCard to="/admin/lhu" title={`${stats.pendingLHU} Eksekusi LHU`} type="info" />}
+                    {stats.pendingOrders > 0 && <AlertCard to="/admin/toko" title={`${stats.pendingOrders} Pesanan Toko Baru`} type="info" />}
+                </div>
+
+                {/* LAYANAN UTAMA */}
+                <div className="space-y-4">
+                    <div className="flex items-center gap-3 border-l-4 border-[#136f42] pl-4">
+                        <h2 className="text-xs font-black text-slate-400 uppercase tracking-[0.4em]">Layanan Utama</h2>
+                        {loading && <Loader2 className="animate-spin text-slate-300" size={14} />}
+                    </div>
+
+                    <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
+                        <DashboardCard to="/admin/verifikasi" icon={<Users size={24} />} title="Anggota" color="green" count={stats.pendingUsers} />
+                        <DashboardCard to="/admin/transaksi" icon={<ArrowRightLeft size={24} />} title="Finance" color="emerald" count={stats.pendingTx} />
+                        <DashboardCard to="/admin/simpanan" icon={<Wallet size={24} />} title="Tarik Simpanan" color="rose" count={stats.pendingWithdrawals} />
+                        <DashboardCard to="/admin/tamasa" icon={<ShieldCheck size={24} />} title="Tamasa" color="amber" count={stats.pendingTamasa} />
+                        <DashboardCard to="/admin/pegadaian" icon={<Scale size={24} />} title="Gadai" color="blue" count={stats.pendingPawn} />
+                        <DashboardCard to="/admin/pembiayaan" icon={<Banknote size={24} />} title="Pinjaman" color="rose" count={stats.pendingLoans} />
+                        <DashboardCard to="/admin/inflip" icon={<Building size={24} />} title="Properti (INFLIP)" color="sky" count={stats.activeInflip} />
+                        <DashboardCard to="/admin/gudang-kredit" icon={<Warehouse size={24} />} title="Gudang Kredit" color="cyan" count={0} />
+                        <DashboardCard to="/admin/toko" icon={<ShoppingBag size={24} />} title="Toko" color="violet" count={stats.pendingOrders} />
+                        <DashboardCard to="/admin/lhu" icon={<TrendingUp size={24} />} title="LHU" color="teal" count={stats.pendingLHU} />
+                        <DashboardCard to="/admin/labarugi" icon={<Receipt size={24} />} title="Laba Rugi" color="slate" count={0} />
+                        <DashboardCard to="/admin/kabar" icon={<Megaphone size={24} />} title="Kabar KKJ" color="brown" count={0} />
+                    </div>
+                </div>
+
+                <div className="text-center pt-8 pb-4">
+                    <p className="text-[9px] font-black text-slate-300 uppercase tracking-[0.6em]">
+                        Internal Control Panel v3.8 • Build 2026.02
+                    </p>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+/* --- SUB-COMPONENTS --- */
+
+const DashboardCard = ({ to, icon, title, color, count }: any) => {
+    const styles: any = {
+        green: "bg-green-50/80 text-[#136f42] group-hover:bg-[#136f42] group-hover:text-white border-green-100",
+        emerald: "bg-emerald-50/80 text-emerald-600 group-hover:bg-emerald-600 group-hover:text-white border-emerald-100",
+        amber: "bg-amber-50/80 text-amber-600 group-hover:bg-amber-500 group-hover:text-white border-amber-100",
+        blue: "bg-blue-50/80 text-blue-600 group-hover:bg-blue-600 group-hover:text-white border-blue-100",
+        violet: "bg-violet-50/80 text-violet-600 group-hover:bg-violet-600 group-hover:text-white border-violet-100",
+        rose: "bg-rose-50/80 text-rose-600 group-hover:bg-rose-600 group-hover:text-white border-rose-100",
+        teal: "bg-teal-50/80 text-teal-600 group-hover:bg-teal-600 group-hover:text-white border-teal-100",
+        slate: "bg-slate-100 text-slate-600 group-hover:bg-slate-600 group-hover:text-white border-slate-200",
+        brown: "bg-orange-50/80 text-orange-800 group-hover:bg-orange-700 group-hover:text-white border-orange-100",
+        cyan: "bg-cyan-50/80 text-cyan-600 group-hover:bg-cyan-600 group-hover:text-white border-cyan-100",
+        sky: "bg-sky-50/80 text-sky-600 group-hover:bg-sky-600 group-hover:text-white border-sky-100",
+    };
+
+    const activeStyle = styles[color] || styles.slate;
+
+    return (
+        <Link to={to} className={`group bg-white rounded-[2rem] p-5 border shadow-[0_4px_20px_rgb(0,0,0,0.02)] hover:shadow-xl hover:shadow-slate-200/50 transition-all duration-300 flex flex-col items-center justify-center text-center gap-3 relative overflow-hidden h-[150px] hover:-translate-y-1 ${activeStyle.split(' ').pop()?.includes('border') ? '' : 'border-slate-100'}`}>
+            {count > 0 && (
+                <div className="absolute top-4 right-4 w-5 h-5 bg-rose-500 text-white text-[9px] font-bold flex items-center justify-center rounded-full shadow-lg shadow-rose-500/40 animate-pulse z-10 border-2 border-white">
+                    {count}
+                </div>
+            )}
+            <div className={cn("w-14 h-14 rounded-2xl flex items-center justify-center shadow-sm transition-all duration-500 group-hover:scale-110", activeStyle)}>
+                {icon}
+            </div>
+            <h3 className="text-[10px] font-black text-slate-600 uppercase tracking-widest group-hover:text-[#136f42] transition-colors mt-1">
+                {title}
+            </h3>
+        </Link>
+    );
+};
+
+const AlertCard = ({ to, title, type }: any) => (
+    <Link to={to} className={cn(
+        "px-4 py-3 rounded-2xl flex items-center justify-between group transition-all shadow-sm border border-transparent hover:scale-[1.02]",
+        type === 'danger' ? "bg-rose-50 hover:bg-rose-100 text-rose-700" :
+            type === 'warning' ? "bg-amber-50 hover:bg-amber-100 text-amber-700" :
+                "bg-green-50 hover:bg-green-100 text-[#136f42]"
+    )}>
+        <div className="flex items-center gap-3">
+            <div className="bg-white/60 p-1.5 rounded-lg shadow-sm">
+                <AlertTriangle size={14} />
+            </div>
+            <h4 className="text-[10px] font-black uppercase tracking-widest">{title}</h4>
+        </div>
+        <ChevronRight size={14} className="opacity-40 group-hover:opacity-100 transition-opacity" />
+    </Link>
+);
