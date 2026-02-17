@@ -9,6 +9,7 @@ import { formatRupiah } from '../../lib/utils';
 import { Link } from 'react-router-dom';
 import { format } from 'date-fns';
 import { id as indonesia } from 'date-fns/locale';
+import { cn } from '../../lib/utils'; // Sesuaikan path-nya ke folder lib Anda
 
 export const AdminFinancing = () => {
     const [loans, setLoans] = useState<any[]>([]);

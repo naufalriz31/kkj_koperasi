@@ -6,6 +6,8 @@ import { formatRupiah } from '../../lib/utils';
 import { format } from 'date-fns';
 import { id as indonesia } from 'date-fns/locale';
 import toast from 'react-hot-toast';
+import { Loader2 } from 'lucide-react';
+
 
 export const AdminFinancialReport = () => {
     const navigate = useNavigate();

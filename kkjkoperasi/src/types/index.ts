@@ -8,8 +8,10 @@ export interface User {
     id: number;
     name: string;
     email: string;
-    email_verified_at?: string | null;
-    created_at?: string;
+    role: 'admin' | 'member';
+    tapro_balance: number;
+    pin?: string;         // Tambahkan tanda tanya (?)
+    created_at?: string;  // Tambahkan tanda tanya (?)
     updated_at?: string;
 }
 
@@ -31,6 +33,8 @@ export interface BalanceTransaction {
     type: 'topup' | 'withdraw' | 'transfer';
     amount: number;
     status: 'success' | 'pending' | 'failed';
+    proof_url?: string; // Penting: URL foto bukti transfer dari Laravel
+    description?: string; // Deskripsi transaksi
     created_at?: string;
     updated_at?: string;
 }
