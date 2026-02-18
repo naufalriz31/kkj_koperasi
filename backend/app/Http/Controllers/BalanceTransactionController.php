@@ -11,139 +11,206 @@ use Illuminate\Support\Facades\Storage;
 class BalanceTransactionController extends Controller
 {
     /**
-     * Handle Top Up dan Withdraw
+     * 1. HANDLE TOP UP (Upload Bukti Transfer)
      */
     public function store(Request $request)
     {
-        // 1. Validasi Input
         $request->validate([
             'amount' => 'required|numeric|min:10000',
-            'type' => 'required|in:topup,withdraw',
-            'proof' => 'nullable|image|mimes:jpeg,png,jpg|max:2048',
+            'type' => 'required|in:topup', 
+            'proof' => 'nullable|image|mimes:jpeg,png,jpg|max:10240',
         ]);
 
         $user = Auth::user();
         $amount = $request->amount;
 
-        // Validasi Saldo jika Withdraw
-        if ($request->type === 'withdraw' && $user->tapro_balance < $amount) {
-            return response()->json(['message' => 'Saldo Tapro tidak mencukupi untuk penarikan ini.'], 400);
-        }
-
-        // Handle upload file bukti transfer
         $proofPath = null;
         if ($request->hasFile('proof')) {
             $path = $request->file('proof')->store('transaction-proofs', 'public');
             $proofPath = url('/storage/' . $path);
         }
 
-        // 2. DB Transaction
         return DB::transaction(function () use ($user, $amount, $request, $proofPath) {
-            
-            // Status: Topup butuh verifikasi admin (pending), Withdraw biasanya langsung diproses (atau pending sesuai kebijakan)
-            $status = ($request->type === 'topup') ? 'pending' : 'success';
-
-            // Simpan ke tabel transactions (Tabel utama yang digunakan dashboard admin)
-            $txId = DB::table('transactions')->insertGetId([
+            $txId = DB::table('balance_transactions')->insertGetId([
                 'user_id' => $user->id,
-                'type' => $request->type,
+                'type' => 'topup',
                 'amount' => $amount,
-                'status' => $status,
+                'status' => 'pending', // Menunggu Admin
                 'proof_url' => $proofPath,
-                'description' => $request->type === 'topup' ? 'Isi Saldo Tapro' : 'Penarikan Saldo Tapro',
+                'description' => 'Isi Saldo Tapro via Transfer',
+                'transaction_code' => 'TOPUP-' . time() . rand(100, 999),
                 'created_at' => now(),
                 'updated_at' => now(),
             ]);
 
-            $newBalance = $user->tapro_balance;
-
-            // Update Saldo HANYA jika status success (biasanya withdraw)
-            if ($status === 'success') {
-                $newBalance = $user->tapro_balance - $amount;
-                DB::table('users')->where('id', $user->id)->update([
-                    'tapro_balance' => $newBalance
-                ]);
-            }
-
-            // 3. Notifikasi
+            // Notifikasi ke User
             DB::table('notifications')->insert([
                 'user_id' => $user->id,
-                'title' => $request->type === 'topup' ? 'Permintaan Top Up' : 'Penarikan Berhasil',
-                'message' => $request->type === 'topup' 
-                    ? 'Permintaan pengisian saldo sedang diverifikasi admin.' 
-                    : 'Penarikan saldo sebesar ' . number_format($amount) . ' berhasil.',
-                'type' => $status === 'success' ? 'success' : 'info',
+                'title' => 'Top Up Diproses',
+                'message' => 'Permintaan Rp ' . number_format($amount) . ' sedang diverifikasi admin.',
+                'type' => 'info',
+                'is_read' => 0,
                 'created_at' => now(),
+                'updated_at' => now(),
             ]);
 
             return response()->json([
-                'message' => 'Transaksi berhasil dicatat!',
-                'status' => $status,
-                'new_balance' => $newBalance
-            ], 200);
+                'message' => 'Top Up berhasil diajukan. Tunggu verifikasi admin.',
+                'transaction_id' => $txId
+            ], 201);
         });
     }
 
     /**
-     * Handle Transfer Antar Anggota
+     * 2. HANDLE TRANSAKSI KELUAR (Transfer, Setor Simpanan, Withdraw)
+     * Menggunakan PIN sebagai validasi
      */
     public function transfer(Request $request)
     {
+        // A. Validasi Input
         $request->validate([
-            'target_member_id' => 'required|exists:users,member_id',
             'amount' => 'required|numeric|min:1000',
-            'pin' => 'required' // Opsional: Tambahkan validasi Hash::check pin di sini
+            'pin'    => 'required|string', 
+            'type'   => 'required|string', // 'internal', 'external', 'withdraw'
         ]);
 
-        $sender = Auth::user();
-        $receiver = User::where('member_id', $request->target_member_id)->first();
+        $user = Auth::user(); 
         $amount = $request->amount;
 
-        if ($sender->id === $receiver->id) {
-            return response()->json(['message' => 'Tidak bisa transfer ke diri sendiri'], 400);
+        // B. Cek PIN (Wajib)
+        if (!$user->pin || $user->pin !== $request->pin) {
+            return response()->json(['message' => 'PIN Transaksi Salah!'], 401);
         }
 
-        if ($sender->tapro_balance < $amount) {
-            return response()->json(['message' => 'Saldo tidak mencukupi'], 400);
+        // C. Cek Saldo Cukup
+        if ($user->tapro_balance < $amount) {
+            return response()->json(['message' => 'Saldo Tapro tidak mencukupi.'], 400);
         }
 
-        return DB::transaction(function () use ($sender, $receiver, $amount) {
-            // 1. Potong Saldo Pengirim
-            DB::table('users')->where('id', $sender->id)->decrement('tapro_balance', $amount);
+        // D. Eksekusi Database (Pakai Try-Catch agar tidak Loading Terus jika Error)
+        try {
+            return DB::transaction(function () use ($user, $amount, $request) {
+                
+                // Variabel default
+                $status = 'success';
+                $code = time();
+                $desc = '';
+                $proofUrl = null;
 
-            // 2. Tambah Saldo Penerima
-            DB::table('users')->where('id', $receiver->id)->increment('tapro_balance', $amount);
+                // --- SKENARIO 1: SETOR SIMPANAN (INTERNAL) ---
+                if ($request->type === 'internal') {
+                    $target = $request->target_account ?? 'simwa_balance';
+                    
+                    // Cek nama kolom valid agar tidak error SQL
+                    $validTargets = [
+                        'simwa_balance', 'simpok_balance', 'simade_balance',
+                        'sipena_balance', 'sihara_balance', 'siqurma_balance',
+                        'siuji_balance', 'siwalima_balance'
+                    ];
 
-            // 3. Catat Transaksi Pengirim
-            DB::table('transactions')->insert([
-                'user_id' => $sender->id,
-                'type' => 'withdraw',
-                'amount' => $amount,
-                'status' => 'success',
-                'description' => "Transfer ke {$receiver->name} ({$receiver->member_id})",
-                'created_at' => now(),
-            ]);
+                    if (!in_array($target, $validTargets)) {
+                        throw new \Exception("Jenis simpanan tidak valid.");
+                    }
 
-            // 4. Catat Transaksi Penerima
-            DB::table('transactions')->insert([
-                'user_id' => $receiver->id,
-                'type' => 'topup',
-                'amount' => $amount,
-                'status' => 'success',
-                'description' => "Terima transfer dari {$sender->name}",
-                'created_at' => now(),
-            ]);
+                    // Potong Tapro -> Tambah Simpanan
+                    DB::table('users')->where('id', $user->id)->decrement('tapro_balance', $amount);
+                    DB::table('users')->where('id', $user->id)->increment($target, $amount);
 
-            // 5. Notifikasi Penerima
-            DB::table('notifications')->insert([
-                'user_id' => $receiver->id,
-                'title' => 'Saldo Masuk! 💸',
-                'message' => "Anda menerima transfer sebesar Rp " . number_format($amount) . " dari {$sender->name}.",
-                'type' => 'success',
-                'created_at' => now(),
-            ]);
+                    $desc = "Setor ke " . $this->getAccountName($target);
+                    $code = 'INT-' . time();
+                }
 
-            return response()->json(['message' => 'Transfer berhasil dikirim!']);
-        });
+                // --- SKENARIO 2: TRANSFER SESAMA (EXTERNAL) ---
+                else if ($request->type === 'external') {
+                    $receiver = User::where('phone', $request->to_phone)->first();
+                    if (!$receiver) throw new \Exception("Penerima tidak ditemukan");
+                    if ($receiver->id === $user->id) throw new \Exception("Tidak bisa transfer ke diri sendiri");
+
+                    // Potong Sender -> Tambah Receiver
+                    DB::table('users')->where('id', $user->id)->decrement('tapro_balance', $amount);
+                    DB::table('users')->where('id', $receiver->id)->increment('tapro_balance', $amount);
+
+                    // Notif ke Penerima
+                    DB::table('notifications')->insert([
+                        'user_id' => $receiver->id,
+                        'title' => 'Dana Masuk! 💸',
+                        'message' => "Terima Rp " . number_format($amount) . " dari " . $user->name,
+                        'type' => 'success',
+                        'is_read' => 0, 'created_at' => now(), 'updated_at' => now()
+                    ]);
+
+                    $desc = "Transfer ke " . $receiver->name;
+                    $code = 'TRF-' . time();
+                }
+
+                // --- SKENARIO 3: TARIK TUNAI (WITHDRAW) ---
+                else if ($request->type === 'withdraw') {
+                    // Potong saldo sekarang juga
+                    DB::table('users')->where('id', $user->id)->decrement('tapro_balance', $amount);
+
+                    $bankInfo = $request->bank_name ? " ({$request->bank_name})" : "";
+                    $desc = "Penarikan Tunai" . $bankInfo;
+                    $code = 'WD-' . time();
+                    
+                    // Status Pending karena butuh Admin transfer uang fisik/bank
+                    $status = 'pending'; 
+                } 
+                
+                else {
+                    throw new \Exception("Tipe transaksi tidak dikenali");
+                }
+
+                // --- SIMPAN RIWAYAT TRANSAKSI ---
+                DB::table('balance_transactions')->insert([
+                    'user_id' => $user->id,
+                    'type' => $request->type === 'internal' ? 'transfer_internal' : $request->type,
+                    'amount' => -$amount, // Negatif = Uang Keluar
+                    'status' => $status,
+                    'description' => $desc,
+                    'transaction_code' => $code,
+                    'proof_url' => null,
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+
+                // --- AMBIL DATA TERBARU UNTUK FRONTEND ---
+                $freshUser = User::find($user->id);
+
+                return response()->json([
+                    'message' => 'Transaksi Berhasil!',
+                    'user' => $freshUser // Frontend pakai ini untuk update saldo realtime
+                ]);
+            });
+
+        } catch (\Exception $e) {
+            // Tangkap error agar frontend tidak stuck loading
+            return response()->json(['message' => 'Gagal: ' . $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * 3. LIST RIWAYAT
+     */
+    public function index(Request $request) {
+        $transactions = DB::table('balance_transactions')
+            ->where('user_id', $request->user()->id)
+            ->orderBy('created_at', 'desc')
+            ->get();
+        return response()->json($transactions);
+    }
+
+    // Helper Nama Simpanan
+    private function getAccountName($column) {
+        $names = [
+            'simwa_balance' => 'Simpanan Wajib',
+            'simpok_balance' => 'Simpanan Pokok',
+            'simade_balance' => 'Simpanan Masa Depan',
+            'sipena_balance' => 'Simpanan Pendidikan',
+            'sihara_balance' => 'Simpanan Hari Raya',
+            'siqurma_balance' => 'Simpanan Qurban',
+            'siuji_balance' => 'Simpanan Haji/Umroh',
+            'siwalima_balance' => 'Simpanan Walimah',
+        ];
+        return $names[$column] ?? 'Simpanan Lain';
     }
 }

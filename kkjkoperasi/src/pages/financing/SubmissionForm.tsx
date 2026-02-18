@@ -24,8 +24,8 @@ export const SubmissionForm = () => {
     useEffect(() => {
         const fetchCatalog = async () => {
             try {
-                // Endpoint Laravel: GET /financing/catalog
-                const response = await API.get('/financing/catalog');
+                // Endpoint Laravel: GET /shop/products (disesuaikan agar sinkron dengan credit_catalog)
+                const response = await API.get('/shop/products');
                 setCatalogItems(response.data || []);
             } catch (error) {
                 console.error("Error fetching catalog:", error);
@@ -36,55 +36,36 @@ export const SubmissionForm = () => {
         fetchCatalog();
     }, []);
 
-    // State Dinamis (Menampung input manual lainnya)
+    // State Dinamis
     const [formData, setFormData] = useState({
-        // Modal Usaha
-        jenisUsaha: '',
-        namaUsaha: '',
-        lamaUsaha: '',
-        omsetHarian: '',
-        keuntunganBersih: '',
-        besarModal: '',
+        jenisUsaha: '', namaUsaha: '', lamaUsaha: '', omsetHarian: '', keuntunganBersih: '', besarModal: '',
+        jenisPelatihan: '', namaPelatihan: '', biayaPelatihan: '',
+        namaAnak: '', namaSekolah: '', biayaPendidikan: '',
         peruntukan: '',
-
-        // Pelatihan
-        jenisPelatihan: '',
-        namaPelatihan: '',
-        biayaPelatihan: '',
-
-        // Pendidikan
-        namaAnak: '',
-        namaSekolah: '',
-        biayaPendidikan: '',
-
-        // Global
         tenor: '12' // Default
     });
 
     // Hasil Perhitungan
     const [simulation, setSimulation] = useState({
-        pokok: 0,
-        margin: 0,
-        angsuran: 0,
-        pajak: 0
+        pokok: 0, margin: 0, angsuran: 0, pajak: 0
     });
 
-    // --- LOGIC PERHITUNGAN ---
+    // --- LOGIC PERHITUNGAN SIMULASI ---
     useEffect(() => {
         let pokok = 0;
         let pajak = 0;
         let ratePerBulan = 0;
         let tenor = parseInt(formData.tenor) || 0;
 
-        // 1. Tentukan Pokok Pinjaman & Pajak
         if (type === 'Kredit Barang') {
             if (selectedProduct) {
                 pokok = (selectedProduct.price - selectedProduct.dp);
                 pajak = selectedProduct.tax || 0;
-
-                if (selectedProduct.tenors && Array.isArray(selectedProduct.tenors)) {
-                    if (!selectedProduct.tenors.includes(tenor)) {
-                        tenor = selectedProduct.tenors[0];
+                
+                // Pastikan tenor yang dipilih valid sesuai list produk
+                if (Array.isArray(selectedProduct.tenors)) {
+                    if (!selectedProduct.tenors.map(String).includes(formData.tenor)) {
+                        tenor = parseInt(selectedProduct.tenors[0]);
                     }
                 }
             }
@@ -96,17 +77,16 @@ export const SubmissionForm = () => {
             pokok = parseInt(formData.biayaPendidikan.replace(/\D/g, '')) || 0;
         }
 
-        // 2. Tentukan Rumus Bunga
+        // Tentukan Rumus Jasa
         if (type === 'Kredit Barang' || type === 'Modal Usaha') {
             ratePerBulan = (0.10 / 12);
         } else {
             ratePerBulan = 0.006;
         }
 
-        // 3. Hitung Angsuran
         if (pokok > 0 && tenor > 0) {
             const totalPokok = pokok + pajak;
-            const totalJasa = pokok * ratePerBulan * tenor; 
+            const totalJasa = Math.round(pokok * ratePerBulan * tenor); 
             const totalBayar = totalPokok + totalJasa;
             const angsuranPerBulan = totalBayar / tenor;
 
@@ -130,20 +110,30 @@ export const SubmissionForm = () => {
     const handleProductChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
         const productId = parseInt(e.target.value);
         const product = catalogItems.find(item => item.id === productId);
-        setSelectedProduct(product || null);
+        
+        if (product) {
+            // [PENTING] Buat salinan aman dan parsing tenor dari String ke Array
+            const safeProduct = { ...product };
+            if (typeof safeProduct.tenors === 'string') {
+                try {
+                    safeProduct.tenors = JSON.parse(safeProduct.tenors);
+                } catch (err) {
+                    safeProduct.tenors = [12];
+                }
+            }
+            
+            setSelectedProduct(safeProduct);
 
-        if (product && product.tenors && product.tenors.length > 0) {
-            setFormData(prev => ({ ...prev, tenor: product.tenors[0].toString() }));
+            // Set tenor pertama otomatis agar simulasi langsung menghitung
+            if (Array.isArray(safeProduct.tenors) && safeProduct.tenors.length > 0) {
+                setFormData(prev => ({ ...prev, tenor: safeProduct.tenors[0].toString() }));
+            }
         }
     };
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-
-        if (simulation.pokok < 100000) {
-            toast.error('Nominal pembiayaan tidak valid.');
-            return;
-        }
+        if (simulation.pokok < 100000) return toast.error('Nominal pembiayaan tidak valid.');
 
         setIsLoading(true);
         const toastId = toast.loading('Mengirim pengajuan...');
@@ -153,48 +143,28 @@ export const SubmissionForm = () => {
             if (type === 'Kredit Barang') {
                 if (!selectedProduct) throw new Error("Pilih barang terlebih dahulu");
                 detailData = {
-                    item_id: selectedProduct.id, // ID MySQL
+                    item_id: selectedProduct.id,
                     item_name: selectedProduct.name,
                     price: selectedProduct.price,
                     dp: selectedProduct.dp,
-                    tax: selectedProduct.tax,
-                    vendor_note: "Barang disediakan oleh Koperasi (Katalog)"
+                    tax: selectedProduct.tax
                 };
-            } else if (type === 'Modal Usaha') {
-                detailData = {
-                    business_type: formData.jenisUsaha,
-                    business_name: formData.namaUsaha,
-                    purpose: formData.peruntukan
-                };
-            } else if (type === 'Biaya Pelatihan') {
-                detailData = {
-                    training_type: formData.jenisPelatihan,
-                    training_name: formData.namaPelatihan
-                };
-            } else if (type === 'Biaya Pendidikan') {
-                detailData = {
-                    child_name: formData.namaAnak,
-                    school_name: formData.namaSekolah,
-                    purpose: formData.peruntukan
-                };
+            } else {
+                detailData = formData;
             }
 
-            // Endpoint Laravel: POST /financing/apply
             await API.post('/financing/apply', {
                 type: type,
                 amount: simulation.pokok + simulation.pajak, 
                 duration: parseInt(formData.tenor),
-                margin_rate: 10,
                 monthly_payment: simulation.angsuran,
                 details: detailData
             });
 
             toast.success('Pengajuan berhasil!', { id: toastId });
             navigate('/pembiayaan');
-
         } catch (error: any) {
-            const msg = error.response?.data?.message || error.message || 'Gagal mengajukan';
-            toast.error('Gagal: ' + msg, { id: toastId });
+            toast.error('Gagal: ' + (error.response?.data?.message || 'Terjadi kesalahan'), { id: toastId });
         } finally {
             setIsLoading(false);
         }
@@ -209,7 +179,6 @@ export const SubmissionForm = () => {
                             <Info className="shrink-0 mt-0.5" size={16} />
                             <p>Pilih barang yang tersedia di katalog. DP dan Tenor sudah ditentukan oleh Admin.</p>
                         </div>
-
                         <div>
                             <label className="block text-sm font-bold text-gray-700 mb-2">Pilih Barang</label>
                             <select
@@ -219,16 +188,10 @@ export const SubmissionForm = () => {
                             >
                                 <option value="" disabled>-- Pilih Katalog Barang --</option>
                                 {catalogItems.map(item => (
-                                    <option key={item.id} value={item.id}>
-                                        {item.name} - {formatRupiah(item.price)}
-                                    </option>
+                                    <option key={item.id} value={item.id}>{item.name} - {formatRupiah(item.price)}</option>
                                 ))}
                             </select>
-                            {catalogItems.length === 0 && (
-                                <p className="text-xs text-red-400 mt-1">Belum ada barang di katalog admin.</p>
-                            )}
                         </div>
-
                         {selectedProduct && (
                             <div className="bg-gray-50 p-4 rounded-xl border border-gray-200 space-y-3">
                                 <div className="flex justify-between text-sm">
@@ -236,12 +199,8 @@ export const SubmissionForm = () => {
                                     <span className="font-bold text-gray-800">{formatRupiah(selectedProduct.price)}</span>
                                 </div>
                                 <div className="flex justify-between text-sm">
-                                    <span className="text-gray-500">Wajib DP (Dibayar Awal)</span>
+                                    <span className="text-gray-500">Wajib DP</span>
                                     <span className="font-bold text-green-600">{formatRupiah(selectedProduct.dp)}</span>
-                                </div>
-                                <div className="flex justify-between text-sm">
-                                    <span className="text-gray-500">Biaya Admin/Pajak</span>
-                                    <span className="font-bold text-orange-600">{formatRupiah(selectedProduct.tax || 0)}</span>
                                 </div>
                                 <div className="border-t border-dashed border-gray-300 pt-2 flex justify-between text-sm font-bold">
                                     <span>Sisa Pokok Hutang</span>
@@ -254,37 +213,27 @@ export const SubmissionForm = () => {
             case 'Modal Usaha':
                 return (
                     <>
-                        <Input name="jenisUsaha" label="Jenis Usaha" placeholder="Kuliner, Fashion, dll" onChange={handleChange} required />
+                        <Input name="jenisUsaha" label="Jenis Usaha" onChange={handleChange} required />
                         <Input name="namaUsaha" label="Nama Usaha" onChange={handleChange} required />
-                        <Input name="lamaUsaha" label="Lama Usaha Berjalan" placeholder="Contoh: 2 Tahun" onChange={handleChange} required />
-                        <div className="grid grid-cols-2 gap-4">
-                            <Input name="omsetHarian" label="Omset Harian" type="number" onChange={handleChange} required />
-                            <Input name="keuntunganBersih" label="Profit Bersih/Bulan" type="number" onChange={handleChange} required />
-                        </div>
-                        <div className="border-t border-dashed border-gray-300 my-2"></div>
-                        <Input name="besarModal" label="Mengajukan Modal Sebesar" type="number" placeholder="Rp" onChange={handleChange} required />
-                        <Input name="peruntukan" label="Peruntukan Permodalan" placeholder="Beli alat, stok barang..." onChange={handleChange} required />
+                        <Input name="besarModal" label="Besar Modal (Rp)" type="number" onChange={handleChange} required />
+                        <Input name="peruntukan" label="Peruntukan" onChange={handleChange} required />
                     </>
                 );
             case 'Biaya Pelatihan':
                 return (
                     <>
-                        <Input name="jenisPelatihan" label="Jenis Pelatihan" placeholder="Sertifikasi, Workshop..." onChange={handleChange} required />
                         <Input name="namaPelatihan" label="Nama Pelatihan" onChange={handleChange} required />
-                        <Input name="biayaPelatihan" label="Biaya yang Dibutuhkan" type="number" placeholder="Rp" onChange={handleChange} required />
+                        <Input name="biayaPelatihan" label="Biaya (Rp)" type="number" onChange={handleChange} required />
                     </>
                 );
             case 'Biaya Pendidikan':
                 return (
                     <>
                         <Input name="namaAnak" label="Nama Anak" onChange={handleChange} required />
-                        <Input name="namaSekolah" label="Nama Sekolah" onChange={handleChange} required />
-                        <Input name="biayaPendidikan" label="Jumlah Pembiayaan" type="number" placeholder="Rp" onChange={handleChange} required />
-                        <Input name="peruntukan" label="Peruntukan Dana" placeholder="Uang gedung, SPP..." onChange={handleChange} required />
+                        <Input name="biayaPendidikan" label="Biaya (Rp)" type="number" onChange={handleChange} required />
                     </>
                 );
-            default:
-                return null;
+            default: return null;
         }
     };
 
@@ -298,140 +247,54 @@ export const SubmissionForm = () => {
             </div>
 
             <div className="max-w-3xl mx-auto p-4 space-y-6">
-
-                {/* PILIH JENIS */}
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                    {[
-                        { id: 'Kredit Barang', icon: <ShoppingBag size={18} /> },
-                        { id: 'Modal Usaha', icon: <Briefcase size={18} /> },
-                        { id: 'Biaya Pelatihan', icon: <BookOpen size={18} /> },
-                        { id: 'Biaya Pendidikan', icon: <GraduationCap size={18} /> }
-                    ].map((item) => (
+                    {['Kredit Barang', 'Modal Usaha', 'Biaya Pelatihan', 'Biaya Pendidikan'].map((id) => (
                         <button
-                            key={item.id}
-                            onClick={() => {
-                                setType(item.id);
-                                setSelectedProduct(null); 
-                                setSimulation({ pokok: 0, margin: 0, angsuran: 0, pajak: 0 });
-                            }}
-                            className={`p-3 rounded-xl border text-xs font-bold flex flex-col items-center gap-2 transition-all ${type === item.id
-                                ? 'bg-[#136f42] text-white border-[#136f42] shadow-lg scale-105'
-                                : 'bg-white text-gray-600 border-gray-200 hover:bg-green-50 hover:border-green-200'
-                                }`}
+                            key={id}
+                            onClick={() => { setType(id); setSelectedProduct(null); setSimulation({ pokok: 0, margin: 0, angsuran: 0, pajak: 0 }); }}
+                            className={`p-3 rounded-xl border text-xs font-bold flex flex-col items-center gap-2 transition-all ${type === id ? 'bg-[#136f42] text-white border-[#136f42] shadow-lg scale-105' : 'bg-white text-gray-600 border-gray-200 hover:bg-green-50 hover:border-green-200'}`}
                         >
-                            {item.icon} {item.id}
+                            {id}
                         </button>
                     ))}
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-
-                    {/* FORMULIR INPUT */}
                     <form onSubmit={handleSubmit} className="bg-white p-6 rounded-2xl shadow-sm border border-gray-200 space-y-4 h-fit">
-                        <h2 className="font-bold text-gray-800 border-b border-gray-100 pb-3 mb-2 flex items-center gap-2">
-                            {type === 'Kredit Barang' && <ShoppingBag size={18} className="text-[#136f42]" />}
-                            {type}
-                        </h2>
-
+                        <h2 className="font-bold text-gray-800 border-b border-gray-100 pb-3 mb-2">{type}</h2>
                         {renderFormInputs()}
-
-                        {/* Tenor Selection */}
                         <div>
-                            <label className="block text-sm font-bold text-gray-700 mb-2">
-                                Tenor (Bulan)
-                                {type === 'Kredit Barang' && <span className="font-normal text-gray-400 text-xs ml-1">(Sesuai ketentuan barang)</span>}
-                            </label>
-
+                            <label className="block text-sm font-bold text-gray-700 mb-2">Tenor (Bulan)</label>
                             <div className="grid grid-cols-4 gap-2">
-                                {(type === 'Kredit Barang' && selectedProduct && selectedProduct.tenors
-                                    ? selectedProduct.tenors
-                                    : [3, 6, 12, 24]
-                                ).map((bln: any) => (
+                                {(Array.isArray(selectedProduct?.tenors) 
+                                    ? selectedProduct.tenors 
+                                    : [3, 6, 12, 24]).map((bln: any) => (
                                     <button
                                         key={bln}
                                         type="button"
                                         onClick={() => setFormData({ ...formData, tenor: bln.toString() })}
-                                        className={`py-2 rounded-lg border text-sm font-bold transition-all ${formData.tenor === bln.toString()
-                                            ? 'bg-[#aeea00] text-[#0f5c35] border-[#aeea00] shadow-sm'
-                                            : 'bg-white text-gray-600 border-gray-200 hover:bg-green-50'
-                                            }`}
+                                        className={`py-2 rounded-lg border text-sm font-bold transition-all ${formData.tenor === bln.toString() ? 'bg-[#aeea00] text-[#0f5c35] border-[#aeea00] shadow-sm' : 'bg-white text-gray-600 border-gray-200 hover:bg-green-50'}`}
                                     >
                                         {bln}
                                     </button>
                                 ))}
                             </div>
-                            {type === 'Kredit Barang' && !selectedProduct && (
-                                <p className="text-xs text-red-400 mt-1 italic">Pilih barang dulu untuk melihat tenor.</p>
-                            )}
                         </div>
                     </form>
 
-                    {/* SIMULASI */}
                     <div className="space-y-4">
-                        <div className="bg-[#136f42] text-white p-6 rounded-2xl shadow-xl relative overflow-hidden">
-                            <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full -translate-y-1/2 translate-x-1/2 blur-2xl"></div>
-                            <h3 className="font-bold text-[#aeea00] flex items-center gap-2 mb-4 relative z-10">
-                                <Calculator size={18} /> Simulasi Angsuran
-                            </h3>
-
-                            <div className="space-y-3 text-sm relative z-10">
-                                <div className="flex justify-between">
-                                    <span className="opacity-70">Pokok (Setelah DP)</span>
-                                    <span className="font-bold">{formatRupiah(simulation.pokok)}</span>
-                                </div>
-
-                                {simulation.pajak > 0 && (
-                                    <div className="flex justify-between">
-                                        <span className="opacity-70">Admin/Pajak</span>
-                                        <span className="font-bold text-orange-300">+ {formatRupiah(simulation.pajak)}</span>
-                                    </div>
-                                )}
-
-                                <div className="flex justify-between">
-                                    <span className="opacity-70">
-                                        {type === 'Kredit Barang' || type === 'Modal Usaha'
-                                            ? 'Jasa (10% / Tahun)'
-                                            : 'Jasa (0.6% / Bulan)'}
-                                    </span>
-                                    <span className="font-bold text-[#aeea00]">
-                                        + {formatRupiah(simulation.margin)}
-                                    </span>
-                                </div>
-
+                        <div className="bg-[#136f42] text-white p-6 rounded-2xl shadow-xl">
+                            <h3 className="font-bold text-[#aeea00] flex items-center gap-2 mb-4"><Calculator size={18} /> Simulasi Angsuran</h3>
+                            <div className="space-y-3 text-sm">
+                                <div className="flex justify-between"><span className="opacity-70">Pokok</span><span className="font-bold">{formatRupiah(simulation.pokok)}</span></div>
+                                <div className="flex justify-between"><span className="opacity-70">Jasa</span><span className="font-bold text-[#aeea00]">+ {formatRupiah(simulation.margin)}</span></div>
                                 <div className="h-px bg-white/20 my-2"></div>
-
-                                <div className="flex justify-between items-center text-lg">
-                                    <span className="font-bold">Angsuran / Bulan</span>
-                                    <span className="font-bold text-[#aeea00] drop-shadow-sm">
-                                        {formatRupiah(simulation.angsuran)}
-                                    </span>
-                                </div>
-                                <div className="text-right text-[10px] opacity-60 mt-1 uppercase tracking-widest font-bold">
-                                    x {formData.tenor} Bulan
-                                </div>
+                                <div className="flex justify-between items-center text-lg"><span className="font-bold">Angsuran / Bulan</span><span className="font-bold text-[#aeea00]">{formatRupiah(simulation.angsuran)}</span></div>
+                                <div className="text-right text-[10px] opacity-60 font-bold">x {formData.tenor} Bulan</div>
                             </div>
                         </div>
-
-                        <div className="bg-amber-50 p-4 rounded-xl text-xs text-amber-800 flex gap-3 leading-relaxed border border-amber-100">
-                            <AlertCircle size={16} className="shrink-0 mt-0.5" />
-                            <p>
-                                <strong>Catatan Penting:</strong> <br />
-                                {type === 'Kredit Barang'
-                                    ? "Barang akan dipesan setelah Admin memverifikasi pengajuan dan Anda membayarkan DP. "
-                                    : "Dana akan dicairkan ke saldo Tapro setelah disetujui Admin."}
-                            </p>
-                        </div>
-
-                        <Button
-                            onClick={handleSubmit}
-                            isLoading={isLoading}
-                            disabled={simulation.pokok === 0 || (type === 'Kredit Barang' && !selectedProduct)}
-                            className="w-full bg-[#136f42] hover:bg-[#0f5c35] py-4 text-lg rounded-xl shadow-lg shadow-green-900/20 active:scale-95 transition-all font-bold"
-                        >
-                            Ajukan Sekarang
-                        </Button>
+                        <Button onClick={handleSubmit} isLoading={isLoading} disabled={simulation.pokok === 0 || (type === 'Kredit Barang' && !selectedProduct)} className="w-full bg-[#136f42] hover:bg-[#0f5c35] py-4 rounded-xl shadow-lg font-bold">Ajukan Sekarang</Button>
                     </div>
-
                 </div>
             </div>
         </div>

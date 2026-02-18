@@ -10,20 +10,28 @@ use Illuminate\Support\Facades\DB;
 class UserController extends Controller
 {
     /**
-     * Mengambil profil dasar user yang sedang login
+     * [PERBAIKAN] Mengambil profil terbaru user yang sedang login
+     * Fungsi ini sangat penting untuk sinkronisasi saldo di dashboard.
      */
     public function profile()
     {
-        $user = Auth::user();
+        // Cari user secara manual berdasarkan ID auth agar data 'fresh' dari database
+        $user = User::find(Auth::id()); 
+
+        if (!$user) {
+            return response()->json(['message' => 'User tidak ditemukan'], 404);
+        }
+
         return response()->json($user);
     }
 
     /**
-     * Mengambil ringkasan finansial user (Context untuk SILA)
+     * Mengambil ringkasan finansial user (Context untuk SILA / AI Assistant)
      */
     public function getSilaContext()
     {
-        $user = Auth::user();
+        // Ambil data terbaru
+        $user = User::find(Auth::id());
 
         return response()->json([
             'name'          => $user->name,
@@ -61,8 +69,8 @@ class UserController extends Controller
                 ->where('user_id', $user->id)
                 ->sum('amount'),
 
-            // 5 Transaksi Terakhir
-            'recent_transactions' => DB::table('transactions')
+            // 5 Transaksi Terakhir (Menggunakan tabel balance_transactions terbaru)
+            'recent_transactions' => DB::table('balance_transactions')
                 ->where('user_id', $user->id)
                 ->orderBy('created_at', 'desc')
                 ->limit(5)
@@ -73,7 +81,7 @@ class UserController extends Controller
     }
 
     /**
-     * Memperbarui profil user
+     * Memperbarui profil user dasar
      */
     public function updateProfile(Request $request)
     {
@@ -84,7 +92,10 @@ class UserController extends Controller
             'phone' => 'nullable|string|max:20',
         ]);
 
-        $user->update($request->only('name', 'phone'));
+        // Gunakan update pada instance user yang aktif
+        $user->name = $request->name;
+        $user->phone = $request->phone;
+        $user->save();
 
         return response()->json([
             'message' => 'Profil berhasil diperbarui',

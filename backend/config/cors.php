@@ -13,26 +13,10 @@ return [
     |
     */
 
-    // Mengizinkan akses ke semua jalur yang diawali dengan api/
     'paths' => ['api/*', 'sanctum/csrf-cookie'],
-
-    // Mengizinkan semua metode HTTP (GET, POST, PUT, DELETE, dll.)
-    'allowed_methods' => ['*'],
-
-    // Mengizinkan semua asal (Origin). 
-    // Anda bisa mengganti '*' menjadi ['http://localhost:5173'] untuk lebih aman.
-    'allowed_origins' => ['*'],
-
-    'allowed_origins_patterns' => [],
-
-    // Mengizinkan semua header (seperti Content-Type, Authorization, dll.)
-    'allowed_headers' => ['*'],
-
-    'exposed_headers' => [],
-
-    'max_age' => 0,
-
-    // Set ke true jika Anda nantinya menggunakan sistem login dengan Cookie/Session
-    'supports_credentials' => false,
+'allowed_methods' => ['*'],
+'allowed_origins' => ['*'], // Atau ['http://localhost:5173'] agar lebih spesifik
+'allowed_headers' => ['*'],
+'supports_credentials' => true,
 
 ];

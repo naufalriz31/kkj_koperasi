@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import API from '../../api/api'; // Menggunakan Axios
+import API from '../../api/api'; // Pastikan path ini benar
 import { Mail, Lock, Loader2, ArrowLeft, Eye, EyeOff } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Input } from '../../components/ui/Input';
 import { useAuthStore } from '../../store/useAuthStore';
-import logoKKJ from '/src/assets/Logo-kkj.png'; 
+// [FIX] Gunakan path relatif agar aman saat build
+import logoKKJ from '../../assets/Logo-kkj.png'; 
 
 export const Login = () => {
     const navigate = useNavigate();
@@ -20,7 +21,6 @@ export const Login = () => {
 
         try {
             // 1. KIRIM PERMINTAAN LOGIN KE LARAVEL
-            // Endpoint: Route::post('/login')
             const response = await API.post('/login', {
                 email: formData.email,
                 password: formData.password
@@ -28,31 +28,14 @@ export const Login = () => {
 
             const { token, user } = response.data;
 
-            // 2. CEK STATUS USER
-            if (user.status === 'pending') {
-                toast((t) => (
-                    <div className="flex flex-col gap-1">
-                        <span className="font-bold text-green-800">Login Berhasil, Tapi...</span>
-                        <span className="text-sm text-green-700">Akun Kak <b>{user.name}</b> masih menunggu verifikasi Admin.</span>
-                        <button onClick={() => toast.dismiss(t.id)} className="bg-green-100 text-green-800 border border-green-200 font-bold px-2 py-1 text-xs rounded mt-1">Tutup</button>
-                    </div>
-                ), { icon: '⏳', duration: 6000 });
-                // Jangan simpan token jika pending (opsional, tergantung kebijakan)
-                return;
-            }
-
-            if (user.status === 'rejected') {
-                toast.error('Maaf, pendaftaran akun ditolak.');
-                return;
-            }
-
-            // 3. SIMPAN SESI (Token & Data User)
-            // Fungsi setAuth dari useAuthStore akan menyimpan ke localStorage
-            setAuth(user, token);
+            // [FIX LOGIC] Jika masuk sini, berarti status sudah Active/Admin (HTTP 200)
+            
+            // 2. SIMPAN SESI (Token & Data User)
+            setAuth(user, token); // Pastikan function ini simpan ke localStorage
 
             toast.success(`Selamat Datang, ${user.name}!`);
 
-            // 4. REDIRECT SESUAI ROLE
+            // 3. REDIRECT SESUAI ROLE
             if (user.role === 'admin') {
                 navigate('/admin/dashboard');
             } else {
@@ -61,9 +44,34 @@ export const Login = () => {
 
         } catch (err: any) {
             console.error(err);
-            // Menangkap pesan error dari Laravel (misal: "Unauthorized")
-            const errorMessage = err.response?.data?.message || 'Email atau Password salah.';
-            toast.error(errorMessage);
+            const status = err.response?.status;
+            const message = err.response?.data?.message || 'Email atau Password salah.';
+
+            // [FIX LOGIC] Handle Status Pending (Backend return 403)
+            if (status === 403 && message.toLowerCase().includes('verifikasi')) {
+                toast((t) => (
+                    <div className="flex flex-col gap-1">
+                        <span className="font-bold text-yellow-800">Menunggu Verifikasi ⏳</span>
+                        <span className="text-sm text-yellow-700">
+                            Akun Anda sudah terdaftar namun belum disetujui Admin.
+                        </span>
+                        <button 
+                            onClick={() => toast.dismiss(t.id)} 
+                            className="bg-yellow-100 text-yellow-800 border border-yellow-200 font-bold px-2 py-1 text-xs rounded mt-2 w-fit"
+                        >
+                            Saya Mengerti
+                        </button>
+                    </div>
+                ), { duration: 6000, icon: '🔒' });
+            }
+            // Handle Rejected
+            else if (status === 403 && message.toLowerCase().includes('ditolak')) {
+                toast.error('Maaf, pendaftaran akun Anda ditolak oleh Admin.');
+            }
+            // Error Lainnya (Password Salah / Server Error)
+            else {
+                toast.error(message);
+            }
         } finally {
             setIsLoading(false);
         }
@@ -126,6 +134,7 @@ export const Login = () => {
 
                     <form onSubmit={handleSubmit} className="space-y-6">
                         
+                        {/* Input Email */}
                         <div className="space-y-1">
                             <label className="text-xs font-bold text-gray-500 uppercase tracking-wider ml-1">Email</label>
                             <div className="relative">
@@ -141,6 +150,7 @@ export const Login = () => {
                             </div>
                         </div>
                         
+                        {/* Input Password */}
                         <div className="space-y-1">
                             <label className="text-xs font-bold text-gray-500 uppercase tracking-wider ml-1">Password</label>
                             <div className="relative group">

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import API from '../../api/api'; // Menggunakan Axios
-import { Check, X, Loader2, RefreshCw, ArrowLeft, User, ShieldCheck, KeyRound, Phone, Search } from 'lucide-react';
+import { Check, X, Loader2, RefreshCw, ArrowLeft, User, KeyRound, Phone, Search } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { format } from 'date-fns';
 import { Link } from 'react-router-dom';
@@ -18,7 +18,6 @@ export const AdminVerification = () => {
         setLoading(true);
         try {
             // Panggil API Laravel: GET /admin/users
-            // Kirim parameter status sebagai query string
             const response = await API.get('/admin/users', {
                 params: {
                     status: activeTab // 'pending' atau 'active'
@@ -44,9 +43,7 @@ export const AdminVerification = () => {
 
         const toastId = toast.loading('Memproses...');
         try {
-            // Endpoint Laravel: POST /admin/users/{id}/verify
             await API.post(`/admin/users/${id}/verify`);
-
             toast.success('Berhasil diverifikasi!', { id: toastId });
             fetchUsers(); // Refresh list
         } catch (err: any) {
@@ -59,9 +56,7 @@ export const AdminVerification = () => {
         if (!window.confirm("Tolak pendaftaran ini?")) return;
         const toastId = toast.loading('Menolak...');
         try {
-            // Endpoint Laravel: POST /admin/users/{id}/reject
             await API.post(`/admin/users/${id}/reject`);
-            
             toast.success('Ditolak', { id: toastId });
             fetchUsers();
         } catch (err: any) {
@@ -76,18 +71,16 @@ export const AdminVerification = () => {
 
         const toastId = toast.loading('Mereset PIN...');
         try {
-            // Endpoint Laravel: POST /admin/users/{id}/reset-pin
             await API.post(`/admin/users/${id}/reset-pin`);
-            
             toast.success('PIN Berhasil Direset!', { id: toastId });
         } catch (err: any) {
             toast.error('Gagal: ' + (err.response?.data?.message || err.message), { id: toastId });
         }
     };
 
-    // Filter pencarian (Client-side filtering sementara, idealnya server-side)
+    // Filter pencarian
     const filteredUsers = users.filter(u =>
-        u.name?.toLowerCase().includes(searchTerm.toLowerCase()) || // name dari Laravel
+        u.name?.toLowerCase().includes(searchTerm.toLowerCase()) || 
         u.member_id?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         u.phone?.includes(searchTerm)
     );
@@ -186,9 +179,14 @@ export const AdminVerification = () => {
                                             </div>
                                             <div className="text-xs text-gray-400 mt-1">{user.email}</div>
                                         </td>
+                                        
+                                        {/* --- PERBAIKAN UTAMA DI SINI --- */}
                                         <td className="p-4 text-sm text-gray-600">
-                                            {format(new Date(user.created_at), 'dd MMM yyyy, HH:mm')}
+                                            {user.created_at 
+                                                ? format(new Date(user.created_at), 'dd MMM yyyy, HH:mm') 
+                                                : '-'}
                                         </td>
+                                        {/* ------------------------------- */}
 
                                         {activeTab === 'active' && (
                                             <td className="p-4 font-bold text-gray-900">

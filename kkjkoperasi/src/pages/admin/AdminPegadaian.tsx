@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import API from "../../api/api"; // Menggunakan Axios
+import API from "../../api/api"; 
 import { useNavigate, Link } from "react-router-dom";
 import { formatRupiah, cn } from "../../lib/utils";
 import { 
@@ -29,14 +29,14 @@ export const AdminPegadaian = () => {
     const fetchData = async () => {
         setLoading(true);
         try {
-            // Panggil API Laravel: GET /admin/pawn/transactions
-            // Backend bertugas melakukan JOIN dengan profiles dan filter status
-            const response = await API.get('/admin/pawn/transactions', {
+            // [FIX]: Endpoint disesuaikan dengan api.php (/admin/pegadaian)
+            const response = await API.get('/admin/pegadaian', {
                 params: { status: activeTab }
             });
             setDataList(response.data || []);
         } catch (err: any) {
             toast.error("Gagal memuat data gadai");
+            console.error(err);
         } finally {
             setLoading(false);
         }
@@ -45,7 +45,8 @@ export const AdminPegadaian = () => {
     // 1. BUKA MODAL APPROVE
     const openApproveModal = (req: any) => {
         setSelectedReq(req);
-        setTaksiranCair(0); // Reset nilai
+        // Default taksiran diisi dengan nominal yang diminta user
+        setTaksiranCair(Number(req.loan_amount) || 0); 
         setIsApproveModalOpen(true);
     };
 
@@ -61,20 +62,16 @@ export const AdminPegadaian = () => {
         if (!selectedReq) return;
         if (taksiranCair <= 0) return toast.error("Nominal taksiran harus diisi!");
 
-        const confirm = window.confirm(`Cairkan dana ${formatRupiah(taksiranCair)} ke saldo user?`);
-        if (!confirm) return;
-
         setIsProcessing(true);
-        const toastId = toast.loading("Memproses pencairan...");
+        const toastId = toast.loading("Memproses pencairan dana...");
 
         try {
-            // Endpoint Laravel: POST /admin/pawn/transactions/{id}/approve
-            // Backend menangani: Update status gadai, Update saldo Tapro user, Catat transaksi log, Kirim notifikasi
-            await API.post(`/admin/pawn/transactions/${selectedReq.id}/approve`, {
+            // [FIX]: Endpoint /admin/pegadaian/{id}/approve
+            await API.post(`/admin/pegadaian/${selectedReq.id}/approve`, {
                 loan_amount: taksiranCair
             });
 
-            toast.success("Berhasil dicairkan!", { id: toastId });
+            toast.success("Gadai disetujui & Dana cair ke Tapro!", { id: toastId });
             setIsApproveModalOpen(false);
             fetchData();
         } catch (err: any) {
@@ -87,16 +84,17 @@ export const AdminPegadaian = () => {
 
     // 4. HANDLE REJECT
     const handleReject = async (req: any) => {
-        const reason = window.prompt("Alasan penolakan:", "Foto kurang jelas / Kualitas barang tidak sesuai");
-        if (!reason) return;
+        const reason = window.prompt("Alasan penolakan:", "Foto kurang jelas / Kadar emas tidak sesuai");
+        if (reason === null) return; // Jika tekan cancel di prompt
+
         const toastId = toast.loading("Memproses penolakan...");
         try {
-            // Endpoint Laravel: POST /admin/pawn/transactions/{id}/reject
-            await API.post(`/admin/pawn/transactions/${req.id}/reject`, {
-                admin_note: reason
+            // [FIX]: Endpoint /admin/pegadaian/{id}/reject
+            await API.post(`/admin/pegadaian/${req.id}/reject`, {
+                reason: reason
             });
             
-            toast.success("Pengajuan ditolak", { id: toastId });
+            toast.success("Pengajuan berhasil ditolak", { id: toastId });
             fetchData();
         } catch (err: any) { 
             toast.error("Gagal memproses penolakan", { id: toastId }); 
@@ -104,146 +102,150 @@ export const AdminPegadaian = () => {
     };
 
     return (
-        <div className="p-6 max-w-7xl mx-auto min-h-screen bg-gray-50 font-sans">
+        <div className="p-6 max-w-7xl mx-auto min-h-screen bg-gray-50 font-sans text-slate-900">
             {/* Header */}
-            <div className="mb-6">
-                <Link to="/admin/dashboard" className="flex items-center gap-2 text-gray-500 hover:text-[#003366] mb-4 w-fit transition-colors text-sm font-medium">
-                    <ArrowLeft size={18} /> Kembali
-                </Link>
+            <div className="mb-8">
+                <button onClick={() => navigate(-1)} className="flex items-center gap-2 text-slate-400 hover:text-[#136f42] mb-4 transition-colors text-xs font-black uppercase tracking-widest">
+                    <ArrowLeft size={16} strokeWidth={3} /> Kembali
+                </button>
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                     <div>
-                        <h1 className="text-2xl font-bold text-gray-900">Approval Gadai</h1>
-                        <p className="text-sm text-gray-500">Verifikasi & Taksiran Gadai Emas Syariah Anggota</p>
+                        <h1 className="text-3xl font-[1000] text-slate-900 tracking-tighter uppercase">Approval Gadai</h1>
+                        <p className="text-sm text-slate-400 font-medium">Verifikasi & Taksiran Gadai Emas Syariah Anggota</p>
                     </div>
-                    <button onClick={fetchData} className="p-2 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 shadow-sm transition-all active:scale-95">
-                        <RefreshCw size={20} className={cn(loading && "animate-spin text-[#003366]")} />
+                    <button onClick={fetchData} className="p-3 bg-white border border-slate-200 rounded-2xl hover:bg-slate-50 shadow-sm transition-all active:scale-95">
+                        <RefreshCw size={20} className={cn(loading && "animate-spin text-[#136f42]")} />
                     </button>
                 </div>
             </div>
 
             {/* Tab Navigation */}
-            <div className="flex gap-2 mb-6 border-b border-gray-200 overflow-x-auto no-scrollbar">
+            <div className="flex p-1.5 bg-slate-200/50 rounded-2xl w-fit mb-8 border border-slate-200">
                 <button
                     onClick={() => setActiveTab('pending')}
-                    className={`pb-3 px-4 font-bold text-sm transition-colors whitespace-nowrap relative flex items-center gap-2 ${activeTab === 'pending' ? 'text-[#003366]' : 'text-gray-400 hover:text-gray-600'}`}
+                    className={cn(
+                        "px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2",
+                        activeTab === 'pending' ? "bg-white text-[#136f42] shadow-sm" : "text-slate-500 hover:text-slate-700"
+                    )}
                 >
-                    <Clock size={16} /> Permintaan Baru
-                    {activeTab === 'pending' && <div className="absolute bottom-0 left-0 w-full h-0.5 bg-[#003366] rounded-t-full"></div>}
+                    <Clock size={14} /> Permintaan Baru
                 </button>
-
                 <button
                     onClick={() => setActiveTab('history')}
-                    className={`pb-3 px-4 font-bold text-sm transition-colors whitespace-nowrap relative flex items-center gap-2 ${activeTab === 'history' ? 'text-[#003366]' : 'text-gray-400 hover:text-gray-600'}`}
+                    className={cn(
+                        "px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2",
+                        activeTab === 'history' ? "bg-white text-[#136f42] shadow-sm" : "text-slate-500 hover:text-slate-700"
+                    )}
                 >
-                    <Archive size={16} /> Riwayat (Selesai)
-                    {activeTab === 'history' && <div className="absolute bottom-0 left-0 w-full h-0.5 bg-[#003366] rounded-t-full"></div>}
+                    <Archive size={14} /> Riwayat (Selesai)
                 </button>
             </div>
 
             <div className="space-y-4">
                 {loading ? (
-                    <div className="p-12 text-center flex flex-col items-center">
-                        <Loader2 className="animate-spin text-[#003366] mb-2" size={32} />
-                        <span className="text-gray-400 text-sm">Menghubungkan ke server...</span>
+                    <div className="p-24 text-center flex flex-col items-center">
+                        <Loader2 className="animate-spin text-[#136f42] mb-4" size={40} />
+                        <span className="text-slate-400 text-[10px] font-black uppercase tracking-[0.2em]">Menyinkronkan Data...</span>
                     </div>
                 ) : dataList.length === 0 ? (
-                    <div className="bg-white p-12 rounded-xl border border-dashed border-gray-300 text-center text-gray-500 flex flex-col items-center">
-                        <div className="w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center mb-3 text-gray-300">
-                            <Scale size={32} />
+                    <div className="bg-white p-20 rounded-[2.5rem] border border-dashed border-slate-200 text-center flex flex-col items-center">
+                        <div className="w-20 h-20 bg-slate-50 rounded-full flex items-center justify-center mb-6 text-slate-200">
+                            <Scale size={40} />
                         </div>
-                        <p>Tidak ada data pengajuan gadai di antrean {activeTab === 'pending' ? 'pending' : 'riwayat'}.</p>
+                        <p className="text-slate-400 font-black uppercase tracking-widest text-xs">Antrean {activeTab === 'pending' ? 'Pending' : 'Riwayat'} Kosong</p>
                     </div>
                 ) : (
-                    <div className="grid grid-cols-1 gap-4">
+                    <div className="grid grid-cols-1 gap-6">
                         {dataList.map((req) => (
-                            <div key={req.id} className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 flex flex-col lg:flex-row gap-6 hover:shadow-md transition-all duration-300">
+                            <div key={req.id} className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100 flex flex-col lg:flex-row gap-8 hover:shadow-xl transition-all duration-500 group">
                                 
-                                <div className="w-full lg:w-44 h-44 bg-gray-100 rounded-xl overflow-hidden shrink-0 relative group border border-gray-100 shadow-inner">
-                                    <img src={req.image_url} alt="Emas" className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
-                                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                                        <a href={req.image_url} target="_blank" rel="noreferrer" className="bg-white px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-2 hover:bg-gray-100"><ExternalLink size={14} /> Perbesar</a>
+                                {/* Image Preview */}
+                                <div className="w-full lg:w-56 h-56 bg-slate-50 rounded-3xl overflow-hidden shrink-0 relative group border border-slate-100 shadow-inner">
+                                    <img src={req.image_url} alt="Emas" className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700" />
+                                    <div className="absolute inset-0 bg-slate-900/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center backdrop-blur-[2px]">
+                                        <a href={req.image_url} target="_blank" rel="noreferrer" className="bg-white px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 hover:scale-105 transition-transform"><ExternalLink size={14} /> Lihat Foto Asli</a>
                                     </div>
                                 </div>
 
-                                <div className="flex-1 space-y-4">
+                                <div className="flex-1 space-y-6">
                                     <div className="flex items-start justify-between">
-                                        <div className="flex items-center gap-3">
-                                            <div className="w-12 h-12 bg-blue-50 text-[#003366] rounded-full flex items-center justify-center shadow-sm">
-                                                <Coins size={24} />
+                                        <div className="flex items-center gap-4">
+                                            <div className="w-14 h-14 bg-green-50 text-[#136f42] rounded-2xl flex items-center justify-center shadow-sm border border-green-100">
+                                                <Coins size={28} />
                                             </div>
                                             <div>
-                                                <h3 className="text-lg font-bold text-gray-900">{req.item_name}</h3>
-                                                <div className="flex items-center gap-2 text-xs text-gray-500 mt-1 uppercase tracking-wider">
-                                                    <span className="font-bold text-gray-700">{req.user?.name}</span>
+                                                <h3 className="text-xl font-[1000] text-slate-900 uppercase tracking-tighter leading-none mb-2">{req.item_name}</h3>
+                                                <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-400">
+                                                    <span className="text-[#136f42]">{req.user_name}</span>
                                                     <span>•</span>
-                                                    <span className="font-mono">{req.user?.member_id}</span>
+                                                    <span className="font-mono text-slate-300">{req.member_id}</span>
                                                 </div>
                                             </div>
                                         </div>
                                         <div className="text-right">
-                                            <span className={cn("px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider", 
-                                                req.status === 'pending' ? 'bg-orange-100 text-orange-700' :
-                                                req.status === 'approved' ? 'bg-blue-100 text-blue-700' :
-                                                req.status === 'completed' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+                                            <span className={cn(
+                                                "px-4 py-1.5 rounded-full text-[9px] font-black uppercase tracking-widest border", 
+                                                req.status === 'pending' ? 'bg-amber-50 text-amber-600 border-amber-100' :
+                                                req.status === 'approved' ? 'bg-blue-50 text-blue-600 border-blue-100' :
+                                                req.status === 'completed' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-rose-50 text-rose-600 border-rose-100'
                                             )}>
-                                                {req.status?.replace('_', ' ')}
+                                                {req.status}
                                             </span>
-                                            <p className="text-[10px] text-gray-400 mt-1 flex items-center justify-end gap-1 font-bold">
-                                                <Calendar size={10} /> {format(new Date(req.created_at), 'dd MMM yyyy, HH:mm', { locale: indonesia })}
+                                            <p className="text-[9px] text-slate-300 mt-2 font-bold uppercase tracking-tighter">
+                                                {format(new Date(req.created_at), 'dd MMM yyyy, HH:mm', { locale: indonesia })}
                                             </p>
                                         </div>
                                     </div>
 
-                                    <div className="grid grid-cols-4 gap-3 bg-gray-50 p-4 rounded-xl border border-gray-100 text-center shadow-sm">
+                                    {/* Data Grid */}
+                                    <div className="grid grid-cols-4 gap-4 bg-slate-50/80 p-5 rounded-3xl border border-slate-100 text-center">
                                         <div>
-                                            <p className="text-[10px] text-gray-400 font-bold uppercase mb-1 tracking-tighter">Berat</p>
-                                            <p className="text-sm font-black text-gray-900">{req.item_weight} gr</p>
+                                            <p className="text-[8px] text-slate-400 font-black uppercase tracking-widest mb-1">Berat</p>
+                                            <p className="text-sm font-black text-slate-900">{req.weight} gr</p>
                                         </div>
                                         <div>
-                                            <p className="text-[10px] text-gray-400 font-bold uppercase mb-1 tracking-tighter">Karat</p>
-                                            <p className="text-sm font-black text-gray-900">{req.item_karat} K</p>
+                                            <p className="text-[8px] text-slate-400 font-black uppercase tracking-widest mb-1">Karat</p>
+                                            <p className="text-sm font-black text-slate-900">{req.karat} K</p>
                                         </div>
                                         <div>
-                                            <p className="text-[10px] text-gray-400 font-bold uppercase mb-1 tracking-tighter">Tenor</p>
-                                            <div className="flex items-center justify-center gap-1 text-sm font-black text-blue-700">
-                                                <CalendarDays size={14} /> {req.tenor_bulan || 4} Bln
-                                            </div>
+                                            <p className="text-[8px] text-slate-400 font-black uppercase tracking-widest mb-1">Tenor</p>
+                                            <p className="text-sm font-black text-[#136f42]">{req.tenor_months} Bln</p>
                                         </div>
                                         <div>
-                                            <p className="text-[10px] text-gray-400 font-bold uppercase mb-1 tracking-tighter">Kondisi</p>
-                                            <p className="text-sm font-black text-gray-900 truncate px-1" title={req.item_condition}>{req.item_condition}</p>
+                                            <p className="text-[8px] text-slate-400 font-black uppercase tracking-widest mb-1">Kondisi</p>
+                                            <p className="text-[10px] font-bold text-slate-900 truncate" title={req.condition_item}>{req.condition_item}</p>
                                         </div>
                                     </div>
 
-                                    {Number(req.loan_amount) > 0 && (
-                                        <div className="flex items-center justify-between bg-blue-50 px-4 py-3 rounded-lg border border-blue-100">
-                                            <span className="text-[10px] font-black text-blue-800 uppercase tracking-widest">Dana Cair:</span>
-                                            <span className="font-black text-blue-900 text-lg">{formatRupiah(req.loan_amount)}</span>
-                                        </div>
-                                    )}
+                                    {/* Footer Info */}
+                                    <div className="flex items-center justify-between bg-[#136f42]/5 px-6 py-4 rounded-2xl border border-[#136f42]/10">
+                                        <span className="text-[10px] font-black text-[#136f42] uppercase tracking-[0.2em]">Permintaan Dana:</span>
+                                        <span className="font-[1000] text-[#136f42] text-xl tracking-tighter">{formatRupiah(req.loan_amount)}</span>
+                                    </div>
                                 </div>
 
-                                <div className="flex flex-col justify-center gap-3 lg:border-l lg:pl-6 border-gray-100 min-w-[200px]">
+                                {/* Action Buttons */}
+                                <div className="flex flex-row lg:flex-col justify-center gap-3 lg:border-l lg:pl-8 border-slate-100 min-w-[220px]">
                                     {req.status === 'pending' ? (
                                         <>
                                             <button 
                                                 onClick={() => openApproveModal(req)}
-                                                className="w-full py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 font-bold text-sm flex items-center justify-center gap-2 shadow-sm transition-all active:scale-95"
+                                                className="flex-1 lg:w-full py-4 bg-[#136f42] text-white rounded-2xl hover:bg-[#0f5c35] font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-2 shadow-lg shadow-green-900/20 transition-all active:scale-95"
                                             >
-                                                <Check size={18} /> Setujui
+                                                <Check size={18} strokeWidth={3} /> Setujui & Cairkan
                                             </button>
                                             <button 
                                                 onClick={() => handleReject(req)} 
-                                                className="w-full py-3 bg-white text-red-600 border border-red-200 rounded-lg hover:bg-red-50 font-bold text-sm flex items-center justify-center gap-2 transition-all active:scale-95"
+                                                className="flex-1 lg:w-full py-4 bg-white text-rose-500 border border-rose-100 rounded-2xl hover:bg-rose-50 font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95"
                                             >
-                                                <X size={18} /> Tolak
+                                                <X size={18} strokeWidth={3} /> Tolak Pengajuan
                                             </button>
                                         </>
                                     ) : (
-                                        <div className="bg-gray-50 p-4 rounded-lg border border-gray-100 flex flex-col items-center justify-center text-center">
-                                            <CheckCircle size={24} className={cn(req.status === 'rejected' ? "text-red-400" : "text-green-500", "mb-2")} />
-                                            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest leading-tight">
-                                                Gadai<br/>{req.status === 'rejected' ? 'Ditolak' : 'Selesai'}
+                                        <div className="bg-slate-50 p-6 rounded-3xl border border-slate-100 flex flex-col items-center justify-center text-center w-full">
+                                            <CheckCircle size={32} className={cn(req.status === 'rejected' ? "text-rose-300" : "text-[#136f42]", "mb-3")} />
+                                            <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-tight">
+                                                Status<br/>{req.status}
                                             </p>
                                         </div>
                                     )}
@@ -256,64 +258,52 @@ export const AdminPegadaian = () => {
 
             {/* MODAL APPROVAL / TAKSIRAN */}
             {isApproveModalOpen && selectedReq && (
-                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in">
-                    <div className="bg-white w-full max-w-md rounded-2xl p-6 shadow-2xl animate-in zoom-in-95">
-                        <div className="flex justify-between items-center mb-6">
-                            <h2 className="text-xl font-bold text-gray-900">Setujui Gadai</h2>
-                            <button onClick={() => setIsApproveModalOpen(false)} className="p-2 bg-gray-50 rounded-full hover:bg-gray-100 text-gray-500"><X size={20}/></button>
+                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md animate-in fade-in duration-300">
+                    <div className="bg-white w-full max-w-md rounded-[2.5rem] p-10 shadow-2xl animate-in zoom-in-95 duration-500">
+                        <div className="flex justify-between items-center mb-8">
+                            <h2 className="text-2xl font-[1000] text-slate-900 uppercase tracking-tighter">Proses Taksiran</h2>
+                            <button onClick={() => setIsApproveModalOpen(false)} className="p-2 bg-slate-50 rounded-full hover:bg-rose-50 text-slate-400 hover:text-rose-500 transition-colors"><X size={20}/></button>
                         </div>
 
-                        <div className="mb-6 bg-blue-50 p-4 rounded-xl border border-blue-100">
-                            <div className="flex justify-between items-start">
-                                <div>
-                                    <p className="text-xs text-blue-600 font-bold uppercase tracking-wider mb-1">Barang Jaminan</p>
-                                    <p className="text-sm text-blue-900 font-bold uppercase">
-                                        {selectedReq.item_name} ({selectedReq.item_weight}gr - {selectedReq.item_karat}K)
-                                    </p>
-                                </div>
-                                <div className="text-right">
-                                    <p className="text-xs text-blue-600 font-bold uppercase tracking-wider mb-1">Tenor</p>
-                                    <p className="text-sm text-blue-900 font-black uppercase">{selectedReq.tenor_bulan || 4} Bulan</p>
-                                </div>
+                        <div className="mb-8 bg-slate-50 p-6 rounded-3xl border border-slate-100 shadow-inner">
+                            <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest mb-3">Rincian Barang Jaminan</p>
+                            <div className="space-y-2">
+                                <p className="text-sm font-black text-slate-900 uppercase">{selectedReq.item_name}</p>
+                                <p className="text-[11px] font-bold text-[#136f42] uppercase tracking-tight">
+                                    {selectedReq.weight} Gram • {selectedReq.karat} Karat • {selectedReq.tenor_months} Bulan
+                                </p>
                             </div>
                         </div>
 
                         <form onSubmit={handleSubmitApprove}>
-                            <div className="mb-6">
-                                <label className="text-xs font-bold text-slate-500 uppercase ml-1 mb-1.5 block">
-                                    Masukkan Nilai Taksiran (Cair)
+                            <div className="mb-8">
+                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 mb-2 block">
+                                    Tentukan Nilai Taksiran Cair (Rp)
                                 </label>
-                                <div className="relative">
-                                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-lg">Rp</span>
+                                <div className="relative group">
+                                    <span className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-300 font-black text-xl group-focus-within:text-[#136f42] transition-colors">Rp</span>
                                     <input 
                                         type="text" 
                                         required 
                                         placeholder="0" 
                                         value={taksiranCair ? taksiranCair.toLocaleString('id-ID') : ''}
                                         onChange={handleTaksiranChange}
-                                        className="w-full border border-slate-300 rounded-xl pl-12 pr-4 py-3.5 font-bold text-lg text-slate-800 outline-none focus:ring-4 focus:ring-blue-100 focus:border-[#003366] transition-all"
+                                        className="w-full border border-slate-200 rounded-2xl pl-16 pr-6 py-5 font-[1000] text-2xl text-slate-900 outline-none focus:ring-4 focus:ring-green-50 focus:border-[#136f42] transition-all"
                                         autoFocus
                                     />
                                 </div>
-                                <p className="text-[10px] text-gray-400 mt-2 ml-1 font-medium">
-                                    *Dana akan langsung dikirim ke Saldo Tapro anggota.
+                                <p className="text-[10px] text-slate-400 mt-4 ml-1 font-bold uppercase leading-relaxed">
+                                    * Dana akan langsung dikirim ke <span className="text-[#136f42]">Saldo Tapro</span> {selectedReq.user_name}.
                                 </p>
                             </div>
 
-                            <div className="flex gap-3">
+                            <div className="flex gap-4">
                                 <button 
                                     type="submit" 
                                     disabled={isProcessing}
-                                    className="flex-1 bg-green-600 text-white py-3.5 rounded-xl font-bold text-sm shadow-lg active:scale-95 transition-all flex items-center justify-center gap-2 hover:bg-green-700 disabled:opacity-50"
+                                    className="flex-1 bg-[#136f42] text-white py-5 rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-xl shadow-green-900/20 active:scale-95 transition-all hover:bg-[#0f5c35] disabled:opacity-50 flex items-center justify-center gap-2"
                                 >
-                                    <CheckCircle size={18} /> {isProcessing ? 'Memproses...' : 'CAIRKAN DANA'}
-                                </button>
-                                <button 
-                                    type="button" 
-                                    onClick={() => setIsApproveModalOpen(false)}
-                                    className="px-6 border border-gray-200 rounded-xl font-bold text-gray-500 hover:bg-gray-50 transition-all text-sm"
-                                >
-                                    Batal
+                                    {isProcessing ? <Loader2 className="animate-spin" /> : <><CheckCircle size={18} /> Konfirmasi & Cairkan</>}
                                 </button>
                             </div>
                         </form>

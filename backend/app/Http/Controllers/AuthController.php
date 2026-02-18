@@ -6,8 +6,8 @@ use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
-use Illuminate\Validation\ValidationException;
 
 class AuthController extends Controller
 {
@@ -16,31 +16,26 @@ class AuthController extends Controller
     // =========================================================================
     public function register(Request $request)
     {
-        // Validasi input dari frontend (Register.tsx)
         $request->validate([
             'name' => 'required|string|max:255',
             'email' => 'required|string|email|max:255|unique:users',
-            'phone' => 'required|string|max:20', // Sesuaikan panjang kolom di DB
-            'password' => 'required|string|min:6|confirmed', // butuh field password_confirmation
+            'phone' => 'required|string|max:20|unique:users',
+            'password' => 'required|string|min:6|confirmed',
         ]);
 
-        // Buat user baru
         $user = User::create([
             'name' => $request->name,
             'email' => $request->email,
             'phone' => $request->phone,
             'password' => Hash::make($request->password),
-            'role' => 'member',         // Default role
-            'status' => 'pending',      // Default status (tunggu admin)
-            'tapro_balance' => 0,       // Saldo awal
-            'member_id' => 'REG-' . time(), // ID sementara sebelum di-approve admin
+            'role' => 'member',
+            'status' => 'pending',
+            'tapro_balance' => 0,
+            'member_id' => 'REG-' . time(),
         ]);
 
-        // Opsional: Langsung buat token jika ingin auto-login
-        // $token = $user->createToken('auth_token')->plainTextToken;
-
         return response()->json([
-            'message' => 'Registrasi berhasil. Silakan login.',
+            'message' => 'Registrasi berhasil. Silakan tunggu verifikasi admin.',
             'user' => $user,
         ], 201);
     }
@@ -57,27 +52,23 @@ class AuthController extends Controller
 
         $user = User::where('email', $request->email)->first();
 
-        // Cek user & password
-        if (! $user || ! Hash::check($request->password, $user->password)) {
-            return response()->json([
-                'message' => 'Email atau Password salah'
-            ], 401);
+        if (!$user || !Hash::check($request->password, $user->password)) {
+            return response()->json(['message' => 'Email atau Password salah'], 401);
         }
 
-        // Cek status akun (Opsional, sudah dihandle di frontend juga)
+        if ($user->role !== 'admin' && $user->status === 'pending') {
+            return response()->json(['message' => 'Akun Anda sedang dalam proses verifikasi admin.'], 403);
+        }
+
         if ($user->status === 'rejected') {
-            return response()->json(['message' => 'Akun Anda ditolak.'], 403);
+            return response()->json(['message' => 'Maaf, pendaftaran Anda ditolak.'], 403);
         }
 
-        // Hapus token lama agar single session (Opsional)
-        // $user->tokens()->delete();
-
-        // Buat token baru
         $token = $user->createToken('auth_token')->plainTextToken;
 
         return response()->json([
             'message' => 'Login berhasil',
-            'user' => $user,
+            'user' => $user, 
             'token' => $token
         ]);
     }
@@ -87,24 +78,22 @@ class AuthController extends Controller
     // =========================================================================
     public function logout(Request $request)
     {
-        // Hapus token yang sedang dipakai saat ini
         $request->user()->currentAccessToken()->delete();
-
-        return response()->json([
-            'message' => 'Logout berhasil'
-        ]);
+        return response()->json(['message' => 'Logout berhasil']);
     }
 
     // =========================================================================
-    // 4. GET USER PROFILE (Untuk checkSession di App.tsx)
+    // 4. GET USER PROFILE (Check Session)
     // =========================================================================
     public function user(Request $request)
     {
-        return response()->json($request->user());
+        // Ambil data terbaru langsung dari DB (Anti-Cache)
+        $user = User::find($request->user()->id);
+        return response()->json($user);
     }
 
     // =========================================================================
-    // 5. UPDATE PROFILE (Nama & HP)
+    // 5. UPDATE PROFILE
     // =========================================================================
     public function updateProfile(Request $request)
     {
@@ -113,7 +102,7 @@ class AuthController extends Controller
             'phone' => 'required|string|max:20',
         ]);
 
-        $user = $request->user();
+        $user = Auth::user();
         $user->update([
             'name' => $request->name,
             'phone' => $request->phone
@@ -126,99 +115,95 @@ class AuthController extends Controller
     }
 
     // =========================================================================
-    // 6. UPDATE AVATAR (Foto Profil)
+    // 6. UPDATE AVATAR
     // =========================================================================
     public function updateAvatar(Request $request)
     {
         $request->validate([
-            'avatar' => 'required|image|mimes:jpeg,png,jpg,gif|max:2048',
+            'avatar' => 'required|image|mimes:jpeg,png,jpg|max:2048',
         ]);
 
-        $user = $request->user();
+        $user = Auth::user();
 
-        // Hapus foto lama jika ada
         if ($user->avatar_url) {
-            // Ambil path relatif dari URL (logic tergantung setting storage Anda)
-            // Contoh sederhana:
             $oldPath = str_replace(url('/storage/'), '', $user->avatar_url);
             Storage::disk('public')->delete($oldPath);
         }
 
-        // Simpan foto baru
         $path = $request->file('avatar')->store('avatars', 'public');
-        
-        // Simpan URL lengkap ke database
         $url = url('/storage/' . $path);
         
         $user->update(['avatar_url' => $url]);
 
         return response()->json([
-            'message' => 'Foto profil berhasil diunggah',
+            'message' => 'Foto profil berhasil diperbarui',
             'avatar_url' => $url
         ]);
     }
 
     // =========================================================================
-    // 7. DELETE AVATAR
-    // =========================================================================
-    public function deleteAvatar(Request $request)
-    {
-        $user = $request->user();
-
-        if ($user->avatar_url) {
-            $oldPath = str_replace(url('/storage/'), '', $user->avatar_url);
-            Storage::disk('public')->delete($oldPath);
-        }
-
-        $user->update(['avatar_url' => null]);
-
-        return response()->json(['message' => 'Foto profil dihapus']);
-    }
-
-    // =========================================================================
-    // 8. UPDATE PIN (Untuk Transaksi)
+    // 7. UPDATE PIN TRANSAKSI
     // =========================================================================
     public function updatePin(Request $request)
     {
         $request->validate([
-            'pin' => 'required|string|size:6', // PIN harus 6 digit angka
-            'current_pin' => 'nullable|string'
+            'pin' => 'required|string|size:6', 
         ]);
 
-        $user = $request->user();
+        $user = Auth::user();
 
-        // Jika user sudah punya PIN, validasi PIN lama
-        if ($user->pin && $request->current_pin !== $user->pin) {
-            return response()->json(['message' => 'PIN Lama salah'], 400);
-        }
+        DB::table('users')->where('id', $user->id)->update([
+            'pin' => $request->pin,
+            'updated_at' => now()
+        ]);
 
-        $user->update(['pin' => $request->pin]);
+        DB::table('notifications')->insert([
+            'user_id' => $user->id,
+            'title' => 'PIN Keamanan Aktif 🔐',
+            'message' => 'PIN transaksi Anda berhasil diatur. Gunakan PIN ini untuk tarik tunai dan transfer.',
+            'type' => 'success',
+            'is_read' => 0,
+            'created_at' => now(),
+            'updated_at' => now()
+        ]);
 
-        return response()->json(['message' => 'PIN berhasil disimpan']);
+        $freshUser = User::find($user->id);
+
+        return response()->json([
+            'message' => 'PIN berhasil disimpan',
+            'user' => $freshUser 
+        ]);
     }
 
     // =========================================================================
-    // 9. CHECK USER (Untuk Fitur Transfer)
+    // 8. CHECK USER (Validasi Penerima Transfer)
     // =========================================================================
     public function checkUser(Request $request)
     {
-        $request->validate([
-            'phone' => 'required|string'
-        ]);
+        $request->validate(['phone' => 'required|string']);
 
-        // Cari user lain berdasarkan No HP (selain diri sendiri)
-        $targetUser = User::where('phone', $request->phone)
-                          ->where('id', '!=', $request->user()->id)
-                          ->first();
+        // Cari user berdasarkan nomor HP yang diketik
+        $targetUser = User::where('phone', $request->phone)->first();
 
-        if ($targetUser) {
-            return response()->json([
-                'exists' => true,
-                'name' => $targetUser->name,
-                'id' => $targetUser->id
-            ]);
+        if (!$targetUser) {
+            return response()->json(['exists' => false, 'message' => 'Nomor HP tidak ditemukan'], 404);
         }
 
-        return response()->json(['exists' => false, 'message' => 'User tidak ditemukan'], 404);
+        // Jangan biarkan user mencari nomornya sendiri untuk transfer
+        if ($targetUser->id === Auth::id()) {
+            return response()->json(['exists' => false, 'message' => 'Tidak bisa mengirim ke nomor sendiri'], 400);
+        }
+
+        // Cek apakah anggota sudah diverifikasi admin (status active)
+        if ($targetUser->status !== 'active') {
+            return response()->json(['exists' => false, 'message' => 'Anggota tujuan belum aktif/diverifikasi'], 403);
+        }
+
+        return response()->json([
+            'exists' => true,
+            'name' => $targetUser->name,
+            'id' => $targetUser->id,
+            'member_id' => $targetUser->member_id
+        ]);
     }
 }

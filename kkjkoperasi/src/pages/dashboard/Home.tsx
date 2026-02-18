@@ -10,7 +10,7 @@ import {
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { NewsCarousel } from '../../components/dashboard/NewsCarousel';
-import API from '../../api/api'; // Menggunakan Axios
+import API from '../../api/api'; 
 import html2canvas from 'html2canvas';
 import toast from 'react-hot-toast';
 
@@ -25,13 +25,13 @@ interface Product {
 }
 
 export const Home = () => {
-    const { user } = useAuthStore();
+    // Tambahkan 'checkSession' dari store
+    const { user, checkSession } = useAuthStore();
     const navigate = useNavigate();
     const [showBalance, setShowBalance] = useState(true);
     const [showDetailAssets, setShowDetailAssets] = useState(false);
     const cardRef = useRef<HTMLDivElement>(null);
 
-    // --- STATE BELANJA ---
     const [products, setProducts] = useState<Product[]>([]);
     const [loadingShop, setLoadingShop] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
@@ -40,18 +40,19 @@ export const Home = () => {
     const [isCartOpen, setIsCartOpen] = useState(false);
 
     useEffect(() => {
-        // Redireksi Admin ke Dashboard Admin
+        // [PERBAIKAN UTAMA]: Sinkronisasi data user dari MySQL setiap kali Home dibuka
+        // Ini untuk memastikan saldo dan status verifikasi selalu yang terbaru
+        checkSession();
+
         if (user?.role === 'admin') {
             navigate('/admin/dashboard', { replace: true });
         }
         fetchProducts();
-    }, [user, navigate]);
+    }, [user?.role, navigate]);
 
-    // Mengambil data produk dari Laravel API
     const fetchProducts = async () => {
         setLoadingShop(true);
         try {
-            // Endpoint Laravel: GET /shop/products
             const response = await API.get('/shop/products');
             setProducts(response.data || []);
         } catch (error) {
@@ -63,8 +64,6 @@ export const Home = () => {
 
     if (user?.role === 'admin') return null;
 
-    // --- DATA ANGGOTA (SINKRON DENGAN MYSQL VIA STORE) ---
-    // Pastikan useAuthStore sudah mengambil data user lengkap dari Laravel
     const userData = {
         name: user?.name || 'Anggota KKJ', 
         memberId: user?.member_id || 'MENUNGGU NIAK',
@@ -87,7 +86,6 @@ export const Home = () => {
 
     const totalOtherAssets = otherSavings.reduce((acc, curr) => acc + curr.val, 0);
 
-    // --- LOGIKA KERANJANG ---
     const addToCart = (product: Product) => {
         const existing = cart.find(item => item.product.id === product.id);
         if (existing) {
@@ -110,7 +108,6 @@ export const Home = () => {
         p.name.toLowerCase().includes(searchTerm.toLowerCase())
     );
 
-    // --- HANDLERS KARTU ---
     const handleDownloadCard = async () => {
         if (!cardRef.current) return;
         const toastId = toast.loading('Mencetak kartu HD...');
@@ -226,7 +223,7 @@ export const Home = () => {
                 </div>
             </div>
 
-            {/* 3. MAIN CONTENT */}
+            {/* 3. MAIN CONTENT (NEWS CAROUSEL) */}
             <div className="max-w-5xl mx-auto px-4 mt-10 space-y-10">
                 <NewsCarousel />
                 

@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import API from '../../api/api'; // Menggunakan Axios
+import API from '../../api/api'; 
 import { useAuthStore } from '../../store/useAuthStore';
-import { Input } from '../../components/ui/Input';
 import { 
     ArrowLeft, CreditCard, Banknote, AlertCircle, 
     Wallet, PiggyBank, CheckCircle, Loader2, Landmark,
@@ -10,11 +9,12 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { formatRupiah, cn } from '../../lib/utils';
-import { PinModal } from '../../components/PinModal';
+import { PinModal } from '../../components/PinModal'; // Pastikan path benar
 
 export const Withdraw = () => {
     const navigate = useNavigate();
-    const { user, checkSession } = useAuthStore();
+    // [PENTING] Ambil updateUser agar saldo di frontend langsung berubah
+    const { user, checkSession, updateUser } = useAuthStore();
 
     // STATE UTAMA
     const [sourceType, setSourceType] = useState<'tapro' | 'simpanan'>('tapro');
@@ -25,26 +25,26 @@ export const Withdraw = () => {
     const [isLoading, setIsLoading] = useState(false);
     const [showPinModal, setShowPinModal] = useState(false);
 
-    // Daftar Opsi Simpanan
+    // Daftar Opsi Simpanan (Pastikan ID match dengan kolom DB jika nanti backend support tarik dari simpanan)
     const simpananOptions = [
-        { id: 'simwa', name: 'Simpanan Wajib', col: 'simwa_balance', icon: CheckCircle },
-        { id: 'simpok', name: 'Simpanan Pokok', col: 'simpok_balance', icon: Save },
-        { id: 'simade', name: 'Masa Depan', col: 'simade_balance', icon: PiggyBank },
-        { id: 'sipena', name: 'Pendidikan', col: 'sipena_balance', icon: School },
-        { id: 'sihara', name: 'Hari Raya', col: 'sihara_balance', icon: Gift },
-        { id: 'siqurma', name: 'Qurban', col: 'siqurma_balance', icon: Heart },
-        { id: 'siuji', name: 'Haji / Umroh', col: 'siuji_balance', icon: Plane },
-        { id: 'siwalima', name: 'Walimah', col: 'siwalima_balance', icon: Heart },
+        { id: 'simwa_balance', name: 'Simpanan Wajib', col: 'simwa_balance', icon: CheckCircle },
+        { id: 'simpok_balance', name: 'Simpanan Pokok', col: 'simpok_balance', icon: Save },
+        { id: 'simade_balance', name: 'Masa Depan', col: 'simade_balance', icon: PiggyBank },
+        { id: 'sipena_balance', name: 'Pendidikan', col: 'sipena_balance', icon: School },
+        { id: 'sihara_balance', name: 'Hari Raya', col: 'sihara_balance', icon: Gift },
+        { id: 'siqurma_balance', name: 'Qurban', col: 'siqurma_balance', icon: Heart },
+        { id: 'siuji_balance', name: 'Haji / Umroh', col: 'siuji_balance', icon: Plane },
+        { id: 'siwalima_balance', name: 'Walimah', col: 'siwalima_balance', icon: Heart },
     ];
 
     useEffect(() => {
         if (!user) checkSession();
-    }, [user]);
+    }, [user, checkSession]);
 
-    // Fungsi mendapatkan saldo aktif berdasarkan pilihan user
+    // Fungsi mendapatkan saldo aktif
     const getActiveBalance = () => {
         if (sourceType === 'tapro') return user?.tapro_balance || 0;
-        // Gunakan 'as any' jika properti dinamis belum ada di interface User
+        // Gunakan 'as any' untuk akses dinamis
         if (selectedSimpanan) return (user as any)?.[selectedSimpanan.col] || 0;
         return 0;
     };
@@ -54,6 +54,7 @@ export const Withdraw = () => {
         setAmount(raw ? parseInt(raw).toLocaleString('id-ID') : '');
     };
 
+    // Validasi Awal sebelum buka PIN
     const handleWithdrawClick = (e: React.FormEvent) => {
         e.preventDefault();
         const nominal = parseInt(amount.replace(/\./g, ''));
@@ -74,27 +75,40 @@ export const Withdraw = () => {
         setShowPinModal(true);
     };
 
+    // [FUNGSI UTAMA] Eksekusi Penarikan ke Backend
     const executeWithdraw = async () => {
         setIsLoading(true);
         const toastId = toast.loading('Mengirim permintaan penarikan...');
         const nominal = parseInt(amount.replace(/\./g, ''));
 
         try {
-            // Panggil API Laravel: POST /balance dengan tipe withdraw
-            await API.post('/balance', {
-                type: 'withdraw',
+            // [FIX] Menggunakan endpoint /transfer sesuai Controller backend baru
+            const payload = {
+                type: 'withdraw',       // Kode perintah untuk backend
                 amount: nominal,
-                // Mengirim metadata tambahan
-                source_type: sourceType,
-                source_id: selectedSimpanan ? selectedSimpanan.id : 'tapro',
-                bank_name: bankName,
-                account_number: accountNumber,
-                description: `Penarikan ke ${bankName} (${accountNumber})`
+                pin: user?.pin,         // [PENTING] Kirim PIN User
+                bank_name: bankName,    // Data tambahan (opsional/disimpan di description backend)
+                account_number: accountNumber
+            };
+
+            const response = await API.post('/transfer', payload);
+
+            // Update Saldo Realtime
+            if (response.data.user) {
+                updateUser(response.data.user);
+            }
+
+            toast.success('Penarikan Berhasil!', { id: toastId });
+            navigate('/transaksi/sukses', { 
+                state: { 
+                    amount: nominal, 
+                    type: 'Tarik Tunai', 
+                    date: new Date().toLocaleString() 
+                } 
             });
 
-            toast.success('Permintaan dikirim! Admin akan memproses segera.', { id: toastId });
-            navigate('/transaksi/riwayat');
         } catch (error: any) {
+            console.error("Withdraw Error:", error);
             const msg = error.response?.data?.message || 'Gagal memproses penarikan';
             toast.error(msg, { id: toastId });
         } finally {
@@ -105,8 +119,7 @@ export const Withdraw = () => {
 
     return (
         <div className="min-h-screen bg-gray-50 pb-24 font-sans text-slate-900">
-            
-            {/* HEADER (HIJAU) */}
+            {/* HEADER */}
             <div className="sticky top-0 z-30 bg-white border-b border-green-100 shadow-sm">
                 <div className="px-4 py-4 flex items-center gap-3">
                     <button onClick={() => navigate(-1)} className="p-2 rounded-full hover:bg-green-50 transition">
@@ -142,11 +155,9 @@ export const Withdraw = () => {
                     </button>
                 </div>
 
-                {/* 2. SALDO CARD (HIJAU HUTAN) */}
+                {/* 2. SALDO CARD */}
                 <div className="rounded-3xl bg-[#136f42] p-6 text-white shadow-xl relative overflow-hidden">
                     <div className="absolute right-0 top-0 w-32 h-32 bg-white/5 rounded-full blur-3xl -mr-10 -mt-10"></div>
-                    <div className="absolute inset-0 bg-gradient-to-br from-[#136f42] to-[#0f5c35] opacity-90 z-0"></div>
-                    
                     <div className="relative z-10">
                         <p className="text-[10px] font-bold text-[#aeea00] uppercase tracking-[0.2em] mb-1">
                             {sourceType === 'tapro' ? 'Saldo Dompet Tapro' : selectedSimpanan ? selectedSimpanan.name : 'Pilih Jenis Simpanan'}
@@ -155,7 +166,7 @@ export const Withdraw = () => {
                             {formatRupiah(getActiveBalance())}
                         </h2>
 
-                        {/* List Opsi Simpanan jika Non-Tapro dipilih */}
+                        {/* List Opsi Simpanan */}
                         {sourceType === 'simpanan' && (
                             <div className="mt-4 grid grid-cols-1 gap-2 max-h-48 overflow-y-auto pr-1 custom-scrollbar">
                                 {simpananOptions.map((opt) => (
@@ -173,7 +184,6 @@ export const Withdraw = () => {
                                             <opt.icon size={14} />
                                             <span>{opt.name}</span>
                                         </div>
-                                        {/* Menggunakan 'as any' untuk akses properti dinamis */}
                                         <span className="opacity-80 font-mono">{formatRupiah((user as any)?.[opt.col] || 0)}</span>
                                     </button>
                                 ))}
@@ -228,9 +238,9 @@ export const Withdraw = () => {
                     <button
                         type="submit"
                         disabled={isLoading || (parseInt(amount.replace(/\D/g, '')) > getActiveBalance())}
-                        className="w-full h-14 text-sm font-black uppercase tracking-widest rounded-2xl bg-[#136f42] text-white hover:bg-[#0f5c35] shadow-lg active:scale-95 transition-all disabled:opacity-50"
+                        className="w-full h-14 text-sm font-black uppercase tracking-widest rounded-2xl bg-[#136f42] text-white hover:bg-[#0f5c35] shadow-lg active:scale-95 transition-all disabled:opacity-50 flex items-center justify-center"
                     >
-                        {isLoading ? <Loader2 className="animate-spin" /> : <><Banknote size={18} className="inline mr-2" /> AJUKAN PENARIKAN</>}
+                        {isLoading ? <Loader2 className="animate-spin" /> : <><Banknote size={18} className="mr-2" /> AJUKAN PENARIKAN</>}
                     </button>
                 </form>
 
@@ -243,10 +253,12 @@ export const Withdraw = () => {
                 </div>
             </div>
 
+            {/* PIN MODAL */}
             <PinModal
                 isOpen={showPinModal}
                 onClose={() => setShowPinModal(false)}
-                onSuccess={executeWithdraw}
+                // [PENTING] Panggil executeWithdraw SAAT PIN BENAR
+                onSuccess={executeWithdraw} 
                 title="Konfirmasi Penarikan"
             />
         </div>

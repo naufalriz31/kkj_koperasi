@@ -69,19 +69,21 @@ export const TopUp = () => {
             formData.append('proof', proofFile); 
             formData.append('description', 'Top Up Saldo Tapro');
 
-            /** * PERBAIKAN: Ubah endpoint dari '/balance' menjadi '/balance/topup'
-             * agar sesuai dengan Route::post('/balance/topup', ...) di Laravel
-             */
+            // [FIX] Menggunakan endpoint yang benar sesuai Laravel route
             await API.post('/balance/topup', formData, {
                 headers: {
                     'Content-Type': 'multipart/form-data',
                 },
             });
 
+            // Sukses
             toast.success('Top Up Berhasil Diajukan!', { id: toastId });
-            navigate('/transaksi/history'); // Sesuaikan dengan path riwayat Anda
+            
+            // [FIX] Redirect kembali ke Dashboard Utama agar tidak logout/tersasar
+            navigate('/'); 
 
         } catch (error: any) {
+            console.error(error);
             const errorMsg = error.response?.data?.message || 'Gagal mengirim data';
             toast.error('Gagal: ' + errorMsg, { id: toastId });
         } finally {
@@ -122,7 +124,14 @@ export const TopUp = () => {
                         <label className="block text-sm font-bold text-gray-700 mb-2">Nominal Top Up</label>
                         <div className="relative">
                             <span className="absolute left-4 top-3.5 text-[#136f42] font-bold">Rp</span>
-                            <Input type="text" placeholder="0" className="pl-12 text-lg font-bold focus:ring-2 focus:ring-[#136f42] border-green-200 bg-green-50/30" value={amount} onChange={handleAmountChange} required />
+                            <Input 
+                                type="text" 
+                                placeholder="0" 
+                                className="pl-12 text-lg font-bold focus:ring-2 focus:ring-[#136f42] border-green-200 bg-green-50/30 py-6" // Added py-6 for better height match
+                                value={amount} 
+                                onChange={handleAmountChange} 
+                                required 
+                            />
                         </div>
                         <p className="text-xs text-gray-400 mt-2 font-medium">*Minimal transfer Rp 10.000</p>
                     </div>
@@ -141,15 +150,15 @@ export const TopUp = () => {
                                         <UploadCloud size={24} className="text-[#136f42]" />
                                     </div>
                                     <p className="text-sm font-bold text-gray-600">Upload Foto / Screenshot</p>
-                                    <p className="text-xs mt-1">JPG / PNG (Max 2MB)</p>
+                                    <p className="text-xs mt-1">JPG / PNG (Max 10MB)</p>
                                 </div>
                             )}
                             <input ref={fileInputRef} type="file" className="hidden" accept="image/*" onChange={handleFileChange} />
                         </div>
                     </div>
 
-                    <Button type="submit" isLoading={isLoading} className="w-full bg-[#136f42] hover:bg-[#0f5c35] py-6 text-lg rounded-xl font-bold shadow-lg shadow-green-900/20 active:scale-95 transition-all">
-                        <Wallet className="mr-2" size={20} /> Konfirmasi Top Up
+                    <Button type="submit" isLoading={isLoading} className="w-full bg-[#136f42] hover:bg-[#0f5c35] py-4 text-lg rounded-xl font-bold shadow-lg shadow-green-900/20 active:scale-95 transition-all flex items-center justify-center">
+                       {isLoading ? 'Memproses...' : <><Wallet className="mr-2" size={20} /> Konfirmasi Top Up</>}
                     </Button>
                 </form>
 

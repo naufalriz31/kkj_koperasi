@@ -2,71 +2,62 @@
 
 namespace App\Models;
 
-// use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
-use Laravel\Sanctum\HasApiTokens; // [PENTING] Tambahkan ini untuk API Token
+use Laravel\Sanctum\HasApiTokens;
 
 class User extends Authenticatable
 {
-    /** @use HasFactory<\Database\Factories\UserFactory> */
     use HasApiTokens, HasFactory, Notifiable;
 
     /**
      * The attributes that are mass assignable.
-     *
-     * @var list<string>
      */
     protected $fillable = [
-        // Data Dasar
         'name',
         'email',
         'password',
         'phone',
-        'role',           // 'admin' atau 'member'
-        'status',         // 'active', 'pending', 'rejected'
-        'member_id',      // Nomor Induk Anggota (NIAK)
-        'avatar_url',     // URL Foto Profil
-        'pin',            // PIN Transaksi (Hashed)
-
-        // Saldo Utama
+        'role',
+        'status',
+        'member_id',
         'tapro_balance',
-
-        // Saldo Simpanan Lain (Sesuai tampilan Home.tsx)
-        'simpok_balance',   // Simpanan Pokok
-        'simwa_balance',    // Simpanan Wajib
-        'simade_balance',   // Masa Depan
-        'sipena_balance',   // Pendidikan
-        'sihara_balance',   // Hari Raya
-        'siqurma_balance',  // Qurban
-        'siuji_balance',    // Haji/Umroh
-        'siwalima_balance', // Walimah
+        'avatar_url',
+        'pin', // [PENTING] Pastikan ini ada agar bisa diupdate
+        
+        // Saldo Simpanan Lain
+        'simpok_balance',
+        'simwa_balance',
+        'simade_balance',
+        'sipena_balance',
+        'sihara_balance',
+        'siqurma_balance',
+        'siuji_balance',
+        'siwalima_balance',
     ];
 
     /**
      * The attributes that should be hidden for serialization.
-     *
-     * @var list<string>
      */
     protected $hidden = [
         'password',
         'remember_token',
-        'pin', // Sembunyikan PIN agar tidak terekspos di API response
+        // 'pin',  <-- [PERBAIKAN UTAMA] HAPUS ATAU KOMENTARI BARIS INI
+        // Jika 'pin' ada di sini, Frontend tidak akan pernah tahu kalau user sudah punya PIN.
     ];
 
     /**
      * Get the attributes that should be cast.
-     *
-     * @return array<string, string>
      */
     protected function casts(): array
     {
         return [
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
+            // 'pin' => 'hashed', <-- JANGAN DI-HASH DULU (Agar sesuai dengan data '111111' di database Anda)
             
-            // Casting saldo ke integer agar di frontend terbaca sebagai angka (bukan string)
+            // Casting saldo ke integer agar aman
             'tapro_balance'    => 'integer',
             'simpok_balance'   => 'integer',
             'simwa_balance'    => 'integer',

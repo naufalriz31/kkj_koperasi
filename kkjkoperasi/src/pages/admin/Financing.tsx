@@ -1,33 +1,33 @@
 import React, { useEffect, useState } from 'react';
-import API from '../../api/api'; // Menggunakan Axios
+import API from '../../api/api'; 
 import {
     Check, X, Loader2, RefreshCw, ArrowLeft, Search,
-    ChevronRight, Calendar
+    ChevronRight, Calendar, Info
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { formatRupiah } from '../../lib/utils';
 import { Link } from 'react-router-dom';
 import { format } from 'date-fns';
 import { id as indonesia } from 'date-fns/locale';
-import { cn } from '../../lib/utils'; // Sesuaikan path-nya ke folder lib Anda
+import { cn } from '../../lib/utils';
 
 export const AdminFinancing = () => {
     const [loans, setLoans] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
-    const [activeTab, setActiveTab] = useState<'pending' | 'active' | 'history'>('pending');
+    const [activeTab, setActiveTab] = useState<'pending' | 'approved' | 'history'>('pending');
 
+    // --- 1. FETCH DATA PEMBIAYAAN ---
     const fetchLoans = async () => {
         setLoading(true);
         try {
-            // Panggil API Laravel: GET /admin/financing
-            // Mengirim parameter tab untuk filter status di backend
-            const response = await API.get('/admin/financing', {
-                params: { tab: activeTab }
+            // [FIX]: Memanggil endpoint /admin/financing/all sesuai rute Laravel
+            const response = await API.get('/admin/financing/all', {
+                params: { status: activeTab }
             });
             setLoans(response.data || []);
         } catch (error) {
             console.error("Gagal mengambil data:", error);
-            toast.error("Gagal mengambil data pembiayaan");
+            toast.error("Gagal mengambil data pembiayaan"); // Error yang muncul di image_acdd1b.png
         } finally {
             setLoading(false);
         }
@@ -37,211 +37,198 @@ export const AdminFinancing = () => {
         fetchLoans();
     }, [activeTab]);
 
-    // LOGIC ACC/REJECT
+    // --- 2. LOGIC APPROVE (SETUJUI) ---
     const handleApprove = async (loan: any) => {
-        const confirm = window.confirm(`Setujui pembiayaan ${loan.type} sebesar ${formatRupiah(loan.amount)}?`);
+        const confirm = window.confirm(`Setujui pembiayaan ${loan.type} untuk ${loan.user_name || 'Anggota'}?`);
         if (!confirm) return;
 
-        const toastId = toast.loading('Memproses...');
+        const toastId = toast.loading('Memproses persetujuan...');
         try {
-            // Endpoint Laravel: POST /admin/financing/{id}/approve
-            // Backend akan menangani pembuatan jadwal angsuran (installments)
+            // Mengirim request ke rute approve di AdminController
             await API.post(`/admin/financing/${loan.id}/approve`);
-            
-            toast.success('Disetujui & Dicairkan', { id: toastId });
-            fetchLoans();
+            toast.success('Pengajuan Berhasil Disetujui ✅', { id: toastId });
+            fetchLoans(); // Refresh data setelah sukses
         } catch (err: any) {
-            const msg = err.response?.data?.message || err.message;
-            toast.error(`Gagal: ${msg}`, { id: toastId });
+            const msg = err.response?.data?.message || "Gagal menyetujui";
+            toast.error(msg, { id: toastId });
         }
     };
 
+    // --- 3. LOGIC REJECT (TOLAK) ---
     const handleReject = async (id: number) => {
-        const reason = window.prompt("Alasan penolakan:");
-        if (!reason) return;
+        const reason = window.prompt("Alasan penolakan (opsional):");
+        if (reason === null) return; 
 
-        const toastId = toast.loading('Menolak...');
+        const toastId = toast.loading('Memproses penolakan...');
         try {
-            // Endpoint Laravel: POST /admin/financing/{id}/reject
-            await API.post(`/admin/financing/${id}/reject`, {
-                reason: reason
-            });
-
-            toast.success('Ditolak', { id: toastId });
+            // Mengirim request ke rute reject di AdminController
+            await API.post(`/admin/financing/${id}/reject`, { reason });
+            toast.success('Pengajuan Telah Ditolak ❌', { id: toastId });
             fetchLoans();
         } catch (err: any) {
-            const msg = err.response?.data?.message || err.message;
-            toast.error(`Gagal: ${msg}`, { id: toastId });
+            const msg = err.response?.data?.message || "Gagal menolak";
+            toast.error(msg, { id: toastId });
         }
     };
 
-    // Helper: Render Detail Kecil
+    // Helper: Render Detail Item (Parsing JSON dari Database)
     const renderDetailBadge = (loan: any) => {
         if (!loan.details) return null;
-        // Parsing details jika dikirim sebagai string JSON dari Laravel
-        const details = typeof loan.details === 'string' ? JSON.parse(loan.details) : loan.details;
-        
-        let text = "";
-        if (loan.type === 'Kredit Barang') text = details.item_name || details.item;
-        else if (loan.type === 'Modal Usaha') text = details.business_name;
-        else if (loan.type === 'Biaya Pelatihan') text = details.training_name;
-        else if (loan.type === 'Biaya Pendidikan') text = details.child_name;
-
-        if (!text) return null;
-
-        return (
-            <span className="text-[10px] bg-gray-100 text-gray-500 px-2 py-0.5 rounded border border-gray-200 truncate max-w-[150px] inline-block">
-                {text}
-            </span>
-        );
+        try {
+            // Data details disimpan sebagai JSON di database
+            const details = typeof loan.details === 'string' ? JSON.parse(loan.details) : loan.details;
+            const text = details.item_name || details.business_name || details.training_name || details.child_name || "Detail Lainnya";
+            
+            return (
+                <div className="flex items-center gap-1.5 mt-1.5">
+                    <Info size={10} className="text-blue-400" />
+                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest truncate max-w-[200px]">
+                        {text}
+                    </span>
+                </div>
+            );
+        } catch (e) { return null; }
     };
 
     return (
-        <div className="p-6 max-w-7xl mx-auto min-h-screen bg-gray-50">
-
-            {/* === HEADER === */}
+        <div className="p-6 max-w-7xl mx-auto min-h-screen bg-gray-50 font-sans">
+            {/* HEADER */}
             <div className="mb-8">
-                <Link to="/admin/dashboard" className="flex items-center gap-2 text-gray-500 hover:text-gray-900 transition-colors mb-4 w-fit text-sm font-medium">
-                    <ArrowLeft size={18} /> Kembali
+                <Link to="/admin/dashboard" className="flex items-center gap-2 text-slate-400 hover:text-[#136f42] transition-colors mb-4 w-fit text-[10px] font-black uppercase tracking-[0.2em]">
+                    <ArrowLeft size={16} strokeWidth={3} /> Kembali ke Dashboard
                 </Link>
 
-                <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                     <div>
-                        <h1 className="text-2xl font-bold text-gray-900">Manajemen Pembiayaan</h1>
-                        <p className="text-gray-500 mt-1 text-sm">Monitoring pengajuan, pinjaman berjalan, dan riwayat arsip.</p>
+                        <h1 className="text-3xl font-[1000] text-slate-900 tracking-tighter uppercase leading-none">Manajemen Pembiayaan</h1>
+                        <p className="text-slate-400 mt-2 text-xs font-bold uppercase tracking-widest">Verifikasi dan Monitoring Kredit Anggota</p>
                     </div>
 
                     <button
                         onClick={fetchLoans}
-                        className="p-2.5 bg-white border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50 hover:text-blue-600 transition-all shadow-sm active:scale-95"
-                        title="Refresh Data"
+                        className="p-3 bg-white border border-slate-200 rounded-2xl text-slate-600 hover:text-[#136f42] transition-all shadow-sm active:scale-95"
                     >
                         <RefreshCw size={20} className={loading ? "animate-spin" : ""} />
                     </button>
                 </div>
 
-                <div className="flex items-center gap-8 border-b border-gray-200 mt-6 overflow-x-auto">
+                {/* TAB NAVIGASI */}
+                <div className="flex items-center gap-8 border-b border-slate-200 mt-10 overflow-x-auto no-scrollbar">
                     {[
                         { id: 'pending', label: 'Menunggu Approval' },
-                        { id: 'active', label: 'Pinjaman Berjalan' },
-                        { id: 'history', label: 'Riwayat Arsip' }
+                        { id: 'approved', label: 'Pinjaman Berjalan' },
+                        { id: 'history', label: 'Riwayat & Arsip' }
                     ].map((tab) => (
                         <button
                             key={tab.id}
                             onClick={() => setActiveTab(tab.id as any)}
-                            className={`pb-3 text-sm font-medium transition-all relative whitespace-nowrap ${activeTab === tab.id
-                                    ? 'text-blue-600 border-b-2 border-blue-600'
-                                    : 'text-gray-500 hover:text-gray-800 border-b-2 border-transparent'
-                                }`}
+                            className={cn(
+                                "pb-4 text-[10px] font-black uppercase tracking-[0.2em] transition-all relative whitespace-nowrap",
+                                activeTab === tab.id ? "text-[#136f42]" : "text-slate-400 hover:text-slate-600"
+                            )}
                         >
                             {tab.label}
+                            {activeTab === tab.id && <div className="absolute bottom-0 left-0 right-0 h-1.5 bg-[#136f42] rounded-t-full" />}
                         </button>
                     ))}
                 </div>
             </div>
 
-            {/* === CONTENT LIST === */}
-            <div className="space-y-3">
+            {/* CONTENT LIST */}
+            <div className="space-y-4">
                 {loading ? (
-                    <div className="py-20 text-center flex flex-col items-center">
-                        <Loader2 className="animate-spin text-blue-500 mb-2" size={32} />
-                        <span className="text-gray-400 text-sm font-medium">Memuat data...</span>
+                    <div className="py-24 text-center flex flex-col items-center gap-4">
+                        <Loader2 className="animate-spin text-[#136f42]" size={40} strokeWidth={3} />
+                        <span className="text-[10px] font-black text-slate-300 uppercase tracking-widest animate-pulse">Sinkronisasi Tabel...</span>
                     </div>
                 ) : loans.length === 0 ? (
-                    <div className="bg-white p-12 rounded-xl border border-dashed border-gray-300 text-center flex flex-col items-center">
-                        <div className="w-14 h-14 bg-gray-50 rounded-full flex items-center justify-center mb-3 text-gray-400">
-                            <Search size={28} />
-                        </div>
-                        <p className="text-gray-500 text-sm font-medium">Tidak ada data ditemukan di tab ini.</p>
+                    <div className="bg-white p-20 rounded-[2.5rem] border border-dashed border-slate-200 text-center flex flex-col items-center">
+                        <Search size={48} className="text-slate-200 mb-4" />
+                        <p className="text-slate-400 text-[10px] font-black uppercase tracking-widest">Tidak ada data di kategori ini</p>
                     </div>
                 ) : (
-                    loans.map((loan) => (
-                        <div key={loan.id} className="bg-white rounded-lg border border-gray-200 p-4 hover:shadow-md transition-all duration-200 group">
-                            <div className="flex flex-col md:flex-row gap-4 items-start md:items-center justify-between">
+                    <div className="grid grid-cols-1 gap-4">
+                        {loans.map((loan) => (
+                            <div key={loan.id} className="bg-white rounded-[2rem] border border-slate-100 p-6 hover:shadow-xl hover:shadow-slate-200/50 transition-all duration-300 group">
+                                <div className="flex flex-col lg:flex-row gap-6 items-start lg:items-center justify-between">
 
-                                {/* 1. Identitas & Info Dasar */}
-                                <div className="flex items-center gap-4 flex-1 min-w-0">
-                                    <div className="w-10 h-10 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center font-bold text-sm border border-blue-100 shrink-0">
-                                        {loan.user?.name?.charAt(0) || 'U'}
-                                    </div>
-
-                                    <div className="min-w-0">
-                                        <div className="flex items-center gap-2 mb-0.5">
-                                            <h3 className="font-bold text-gray-900 truncate text-sm md:text-base">
-                                                {loan.user?.name}
-                                            </h3>
-                                            <span className="text-[10px] bg-gray-100 text-gray-500 px-1.5 rounded border border-gray-200">
-                                                {loan.user?.member_id}
-                                            </span>
+                                    {/* INFO ANGGOTA & PRODUK */}
+                                    <div className="flex items-center gap-5 flex-1 min-w-0">
+                                        <div className="w-14 h-14 rounded-2xl bg-slate-50 flex items-center justify-center font-black text-[#136f42] text-xl border border-slate-100 group-hover:bg-[#136f42] group-hover:text-white transition-all duration-500">
+                                            {loan.user_name?.charAt(0) || 'M'}
                                         </div>
 
-                                        <div className="flex flex-wrap items-center gap-x-2 text-xs text-gray-500">
-                                            <span className="text-blue-600 font-medium">{loan.type}</span>
-                                            <span className="text-gray-300">•</span>
-                                            <span>{loan.duration} Bulan</span>
-                                            <span className="text-gray-300">•</span>
-                                            <span className="flex items-center gap-1">
-                                                <Calendar size={10} /> {format(new Date(loan.created_at), 'dd MMM yyyy', { locale: indonesia })}
-                                            </span>
+                                        <div className="min-w-0">
+                                            <div className="flex items-center gap-2 mb-1">
+                                                <h3 className="font-[1000] text-slate-800 uppercase tracking-tight text-lg leading-none">
+                                                    {loan.user_name}
+                                                </h3>
+                                                <span className="text-[9px] bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full font-black">
+                                                    #{loan.member_id || 'TEMP-ID'}
+                                                </span>
+                                            </div>
+
+                                            <div className="flex flex-wrap items-center gap-x-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                                                <span className="text-[#136f42]">{loan.type}</span>
+                                                <span className="w-1 h-1 rounded-full bg-slate-200" />
+                                                <span>{loan.duration} Bulan</span>
+                                                <span className="w-1 h-1 rounded-full bg-slate-200" />
+                                                <span className="flex items-center gap-1">
+                                                    <Calendar size={12} /> {format(new Date(loan.created_at), 'dd MMM yyyy', { locale: indonesia })}
+                                                </span>
+                                            </div>
+                                            {renderDetailBadge(loan)}
+                                        </div>
+                                    </div>
+
+                                    {/* NOMINAL & STATUS */}
+                                    <div className="flex flex-wrap items-center justify-between lg:justify-end gap-10 w-full lg:w-auto border-t lg:border-t-0 border-slate-50 pt-5 lg:pt-0">
+                                        <div className="text-left lg:text-right">
+                                            <p className="text-[9px] text-slate-300 font-black uppercase tracking-widest mb-1">Total Pembiayaan</p>
+                                            <p className="font-[1000] text-slate-900 text-xl tracking-tighter leading-none">{formatRupiah(loan.amount)}</p>
                                         </div>
 
-                                        <div className="mt-1">{renderDetailBadge(loan)}</div>
-                                    </div>
-                                </div>
-
-                                {/* 2. Nominal & Status */}
-                                <div className="flex items-center justify-between md:justify-end gap-8 w-full md:w-auto border-t md:border-t-0 border-gray-50 pt-3 md:pt-0">
-                                    <div className="text-left md:text-right">
-                                        <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider mb-0.5">NOMINAL</p>
-                                        <p className="font-bold text-gray-900 text-sm md:text-base">{formatRupiah(loan.amount)}</p>
-                                    </div>
-
-                                    <div>
-                                        <span className={cn(
-                                            "px-2.5 py-1 rounded text-xs font-bold border",
-                                            loan.status === 'pending' ? "bg-orange-50 text-orange-700 border-orange-100" :
-                                            loan.status === 'active' ? "bg-blue-50 text-blue-700 border-blue-100" :
-                                            loan.status === 'paid' ? "bg-green-50 text-green-700 border-green-100" :
-                                            "bg-red-50 text-red-700 border-red-100"
+                                        <div className={cn(
+                                            "px-4 py-1.5 rounded-full text-[9px] font-black uppercase tracking-[0.15em] border",
+                                            loan.status === 'pending' ? "bg-amber-50 text-amber-600 border-amber-100" :
+                                            loan.status === 'approved' ? "bg-emerald-50 text-emerald-600 border-emerald-100" :
+                                            "bg-rose-50 text-rose-600 border-rose-100"
                                         )}>
-                                            {loan.status === 'active' ? 'Berjalan' : loan.status?.toUpperCase()}
-                                        </span>
+                                            {loan.status}
+                                        </div>
+
+                                        {/* AKSI */}
+                                        <div className="flex items-center gap-2">
+                                            {loan.status === 'pending' ? (
+                                                <>
+                                                    <button
+                                                        onClick={() => handleApprove(loan)}
+                                                        className="h-11 px-6 bg-[#136f42] hover:bg-[#0f5c35] text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-lg shadow-green-900/20 transition-all flex items-center gap-2 active:scale-95"
+                                                    >
+                                                        <Check size={16} strokeWidth={3} /> Setujui
+                                                    </button>
+                                                    <button
+                                                        onClick={() => handleReject(loan.id)}
+                                                        className="h-11 px-6 bg-white border border-rose-200 text-rose-600 hover:bg-rose-50 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-95"
+                                                    >
+                                                        Tolak
+                                                    </button>
+                                                </>
+                                            ) : (
+                                                <Link
+                                                    to={`/admin/pembiayaan/${loan.id}`}
+                                                    className="h-11 w-11 bg-slate-50 text-slate-400 hover:bg-[#136f42] hover:text-white rounded-2xl flex items-center justify-center transition-all border border-slate-100 active:scale-95"
+                                                >
+                                                    <ChevronRight size={20} strokeWidth={3} />
+                                                </Link>
+                                            )}
+                                        </div>
                                     </div>
-                                </div>
 
-                                {/* 3. Action Buttons */}
-                                <div className="flex items-center gap-2 w-full md:w-auto mt-2 md:mt-0 md:pl-4 md:border-l border-gray-100">
-                                    {loan.status === 'pending' ? (
-                                        <>
-                                            <button
-                                                onClick={() => handleApprove(loan)}
-                                                className="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded text-xs font-bold shadow-sm transition-colors flex items-center gap-1"
-                                            >
-                                                <Check size={14} /> Setujui
-                                            </button>
-                                            <button
-                                                onClick={() => handleReject(loan.id)}
-                                                className="px-3 py-1.5 bg-white border border-red-200 text-red-600 hover:bg-red-50 rounded text-xs font-bold transition-colors flex items-center gap-1"
-                                            >
-                                                <X size={14} /> Tolak
-                                            </button>
-                                        </>
-                                    ) : (
-                                        <Link
-                                            to={`/admin/pembiayaan/${loan.id}`}
-                                            className={`px-3 py-1.5 rounded text-xs font-bold border flex items-center gap-1 transition-colors ${loan.status === 'active'
-                                                    ? 'bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100'
-                                                    : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
-                                                }`}
-                                        >
-                                            {loan.status === 'active' ? 'Pantau' : 'Detail'} <ChevronRight size={14} />
-                                        </Link>
-                                    )}
                                 </div>
-
                             </div>
-                        </div>
-                    ))
+                        ))}
+                    </div>
                 )}
             </div>
         </div>

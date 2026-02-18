@@ -1,52 +1,64 @@
-/**
- * Kontrak data untuk aplikasi Koperasi KKJ.
- * Interface ini disinkronkan dengan tabel MySQL di phpMyAdmin.
- */
-
-// 1. Interface untuk Data User (Tabel: users)
+// User Profile
 export interface User {
-    id: number;
-    name: string;
-    email: string;
-    role: 'admin' | 'member';
-    tapro_balance: number;
-    pin?: string;         // Tambahkan tanda tanya (?)
-    created_at?: string;  // Tambahkan tanda tanya (?)
-    updated_at?: string;
+  id: number;
+  name: string;
+  email: string;
+  role: 'admin' | 'member';
+  status: 'active' | 'pending' | 'rejected';
+  tapro_balance: number;
+  pin?: string;         // Tambahan agar Profile.tsx tidak error
+  created_at?: string;  // Tambahan agar Home.tsx tidak error
+  updated_at?: string;
 }
 
-// 2. Interface untuk Transaksi Gadai (Tabel: pawn_transactions)
-export interface PawnTransaction {
-    id?: number;
-    user_id: number;
-    item_name: string;
-    loan_amount: number;
-    status: 'pending' | 'approved' | 'rejected';
-    created_at?: string;
-    updated_at?: string;
-}
+export type UserProfile = User;
 
-// 3. Interface untuk Transaksi Saldo (Tabel: balance_transactions)
+// Transaksi Saldo
 export interface BalanceTransaction {
-    id?: number;
-    user_id: number;
-    type: 'topup' | 'withdraw' | 'transfer';
-    amount: number;
-    status: 'success' | 'pending' | 'failed';
-    proof_url?: string; // Penting: URL foto bukti transfer dari Laravel
-    description?: string; // Deskripsi transaksi
-    created_at?: string;
-    updated_at?: string;
+  id: number;
+  user_id: number;
+  type: 'topup' | 'transfer' | 'payment' | 'withdrawal';
+  amount: number;
+  description: string;
+  status: 'pending' | 'success' | 'failed';
+  created_at: string;
+  reference_id?: string;
 }
 
-// 4. Interface untuk Respon Login/Register dari Laravel Sanctum
-export interface AuthResponse {
-    user: User;
-    token: string;
+// Gadai (Pawn)
+export interface PawnTransaction {
+  id: number;
+  user_id: number;
+  item_name: string;
+  item_condition: string;
+  estimated_value: number;
+  loan_amount: number;
+  status: 'pending' | 'approved' | 'rejected' | 'active' | 'completed';
+  description?: string;
+  image_url?: string; // Tambahkan ini jika ada upload foto
+  created_at: string;
 }
 
-// 5. Interface untuk Error API (Menangani pesan error dari Laravel)
-export interface ApiError {
-    message: string;
-    errors?: Record<string, string[]>;
+// Pembiayaan (Financing) - BARU
+export interface Financing {
+  id: number;
+  user_id: number;
+  type: 'cash' | 'goods';
+  amount: number;
+  duration_months: number;
+  reason?: string;
+  status: 'pending' | 'approved' | 'rejected' | 'active' | 'paid_off';
+  created_at: string;
+}
+
+// Emas (Tamasa) - BARU
+export interface GoldPrice {
+  id: number;
+  buy_price: number;
+  sell_price: number;
+  updated_at: string;
+}
+
+export interface TamasaBalance {
+  amount_grams: number;
 }

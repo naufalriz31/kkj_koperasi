@@ -33,8 +33,12 @@ Schema::create('shop_orders', function (Blueprint $table) {
     /**
      * Reverse the migrations.
      */
-    public function down(): void
-    {
-        Schema::dropIfExists('shop_tables');
-    }
+   public function down(): void
+
+{
+    // Hapus tabel anak dulu (yang punya foreign key)
+    Schema::dropIfExists('shop_orders');
+    // Baru hapus tabel induk
+    Schema::dropIfExists('shop_products');
+}
 };

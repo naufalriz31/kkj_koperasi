@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import API from '../../api/api'; // Menggunakan Axios menggantikan Supabase
+import API from '../../api/api'; 
 import { useAuthStore } from '../../store/useAuthStore';
 import {
   ArrowLeft,
@@ -10,7 +10,8 @@ import {
   Coins,
   TrendingUp,
   Filter,
-  PiggyBank
+  PiggyBank,
+  Loader2
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { formatRupiah, cn } from '../../lib/utils';
@@ -27,14 +28,12 @@ export const TransactionHistory = () => {
     const fetchHistory = async () => {
       setLoading(true);
       try {
-        // 1. Pastikan session user aktif
         if (!user) {
           await checkSession();
         }
 
-        // 2. Ambil data dari Route::get('/balance') di Laravel
-        // Endpoint ini mengembalikan data dari tabel balance_transactions MySQL
-        const response = await API.get('/balance');
+        // [FIX]: Menggunakan endpoint yang konsisten dengan controller backend
+        const response = await API.get('/balance/history');
         setTransactions(response.data || []);
       } catch (error) {
         console.error("Gagal mengambil riwayat:", error);
@@ -44,7 +43,7 @@ export const TransactionHistory = () => {
     };
 
     fetchHistory();
-  }, [user, checkSession]);
+  }, [checkSession]); // user dihilangkan dari dependency agar tidak infinite loop jika checkSession update user
 
   const getTransactionStyle = (tx: any) => {
     const type = tx.type;
@@ -65,19 +64,21 @@ export const TransactionHistory = () => {
           text: 'text-rose-700',
           label: displayLabel || 'Tarik Tunai'
         };
-      case 'transfer_in':
+      case 'transfer':
+        // Jika amount negatif berarti transfer keluar, jika positif transfer masuk
+        const isOut = tx.amount < 0;
         return {
-          icon: <ArrowDownLeft size={20} />,
-          bg: 'bg-emerald-50',
-          text: 'text-emerald-700',
-          label: displayLabel || 'Transfer Masuk'
+          icon: isOut ? <ArrowUpRight size={20} /> : <ArrowDownLeft size={20} />,
+          bg: isOut ? 'bg-rose-50' : 'bg-emerald-50',
+          text: isOut ? 'text-rose-700' : 'text-emerald-700',
+          label: displayLabel || (isOut ? 'Transfer Keluar' : 'Transfer Masuk')
         };
-      case 'transfer_out':
+      case 'transfer_internal':
         return {
-          icon: <ArrowUpRight size={20} />,
-          bg: 'bg-rose-50',
-          text: 'text-rose-700',
-          label: displayLabel || 'Transfer Keluar'
+          icon: <PiggyBank size={20} />,
+          bg: 'bg-indigo-50',
+          text: 'text-indigo-700',
+          label: displayLabel || 'Setor Simpanan'
         };
       case 'tamasa_buy':
         return {
@@ -94,15 +95,6 @@ export const TransactionHistory = () => {
           label: displayLabel || 'Bagi Hasil LHU'
         };
       default:
-        // Handle setoran simpanan (misal: deposit_simwa)
-        if (type.startsWith('deposit_')) {
-             return {
-                icon: <PiggyBank size={20} />,
-                bg: 'bg-indigo-50',
-                text: 'text-indigo-700',
-                label: displayLabel || 'Setor Simpanan'
-             };
-        }
         return {
           icon: <ArrowRightLeft size={20} />,
           bg: 'bg-slate-100',
@@ -114,7 +106,6 @@ export const TransactionHistory = () => {
 
   return (
     <div className="min-h-screen bg-gray-50 pb-24 font-sans text-slate-900">
-
       {/* HEADER */}
       <div className="sticky top-0 z-30 bg-white border-b border-green-100 shadow-sm">
         <div className="px-4 py-4 flex items-center justify-between">
@@ -136,10 +127,9 @@ export const TransactionHistory = () => {
       </div>
 
       <div className="max-w-xl mx-auto p-4 space-y-4">
-
         {loading ? (
           <div className="text-center py-24 flex flex-col items-center gap-3">
-            <div className="animate-spin rounded-full h-8 w-8 border-2 border-[#136f42] border-t-transparent"></div>
+            <Loader2 className="animate-spin text-[#136f42]" size={32} />
             <p className="text-sm text-slate-500 font-medium">
               Memuat data...
             </p>
@@ -150,35 +140,32 @@ export const TransactionHistory = () => {
               <Clock size={32} className="text-[#136f42]/30" />
             </div>
             <p className="text-sm font-bold uppercase tracking-widest text-gray-400">
-                Belum ada transaksi
+              Belum ada transaksi
             </p>
           </div>
         ) : (
           transactions.map((tx) => {
             const style = getTransactionStyle(tx);
-            // Tentukan apakah ini pemasukan atau pengeluaran
-            // 'deposit_' dianggap pengeluaran dari Tapro (walau masuk ke simpanan lain), 
-            // tapi jika ingin ditampilkan sebagai mutasi simpanan, sesuaikan.
-            // Di sini kita anggap 'deposit_' = pengeluaran dari Tapro
-            const isIncome = ['topup', 'transfer_in', 'lhu'].includes(tx.type);
+            // Saldo masuk jika type topup, transfer masuk, atau nominal positif
+            const isIncome = tx.amount > 0;
 
             return (
               <div
                 key={tx.id}
                 className="bg-white p-4 rounded-2xl border border-gray-100 flex justify-between items-center shadow-sm hover:shadow-md transition group"
               >
-                <div className="flex items-center gap-4">
+                <div className="flex items-center gap-4 min-w-0">
                   <div
                     className={cn(
-                      "w-12 h-12 rounded-xl flex items-center justify-center transition-all shadow-sm",
+                      "w-12 h-12 rounded-xl flex items-center justify-center shrink-0 transition-all shadow-sm",
                       style.bg,
                       style.text
                     )}
                   >
                     {style.icon}
                   </div>
-                  <div>
-                    <p className="font-bold text-slate-800 text-sm leading-tight tracking-tight">
+                  <div className="min-w-0">
+                    <p className="font-bold text-slate-800 text-sm leading-tight tracking-tight truncate">
                       {style.label}
                     </p>
                     <p className="text-[10px] font-medium text-slate-400 mt-1 uppercase tracking-wider">
@@ -191,14 +178,14 @@ export const TransactionHistory = () => {
                   </div>
                 </div>
 
-                <div className="text-right">
+                <div className="text-right shrink-0">
                   <p
                     className={cn(
                       "font-mono font-black text-base tracking-tighter",
-                      isIncome ? 'text-emerald-600' : 'text-rose-500'
+                      isIncome ? 'text-emerald-600' : 'text-slate-900'
                     )}
                   >
-                    {isIncome ? '+' : '-'} {formatRupiah(tx.amount)}
+                    {isIncome ? '+' : '-'} {formatRupiah(Math.abs(tx.amount))}
                   </p>
 
                   <div className="flex justify-end mt-1">
@@ -216,6 +203,14 @@ export const TransactionHistory = () => {
             );
           })
         )}
+      </div>
+      
+      {/* Tombol bantuan atau info tambahan */}
+      <div className="max-w-xl mx-auto px-4 mt-4">
+        <p className="text-center text-[10px] text-slate-400 font-medium leading-relaxed">
+          Menampilkan riwayat transaksi 30 hari terakhir. <br />
+          Hubungi admin jika terdapat selisih saldo.
+        </p>
       </div>
     </div>
   );

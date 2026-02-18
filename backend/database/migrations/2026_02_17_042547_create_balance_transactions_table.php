@@ -9,13 +9,20 @@ return new class extends Migration
     /**
      * Run the migrations.
      */
-    public function up(): void {
+   public function up(): void
+{
     Schema::create('balance_transactions', function (Blueprint $table) {
         $table->id();
-        $table->foreignId('user_id')->constrained()->onDelete('cascade');
-        $table->enum('type', ['topup', 'withdraw', 'transfer']);
+        $table->foreignId('user_id')->constrained('users')->onDelete('cascade');
+        $table->string('type'); // topup, withdraw, transfer
         $table->decimal('amount', 15, 2);
-        $table->string('status')->default('pending');
+        $table->string('status')->default('pending'); // pending, success, failed
+        $table->text('description')->nullable();
+        
+        // --- INI KOLOM TAMBAHAN YANG SEBELUMNYA HILANG ---
+        $table->string('proof_url')->nullable();       // Menyimpan link foto bukti
+        $table->string('transaction_code')->nullable(); // Menyimpan kode unik (TOP-123)
+        
         $table->timestamps();
     });
 }
