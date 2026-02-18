@@ -115,21 +115,28 @@ class AuthController extends Controller
     }
 
     // =========================================================================
-    // 6. UPDATE AVATAR
+    // 6. UPDATE AVATAR (LIMIT 10MB)
     // =========================================================================
     public function updateAvatar(Request $request)
     {
         $request->validate([
-            'avatar' => 'required|image|mimes:jpeg,png,jpg|max:2048',
+            // [FIX]: Limit dinaikkan dari 2048 (2MB) menjadi 10240 (10MB)
+            'avatar' => 'required|image|mimes:jpeg,png,jpg,gif|max:10240',
         ]);
 
         $user = Auth::user();
 
+        // Hapus avatar lama jika ada
         if ($user->avatar_url) {
+            // Mengubah URL lengkap menjadi path relatif untuk storage
             $oldPath = str_replace(url('/storage/'), '', $user->avatar_url);
-            Storage::disk('public')->delete($oldPath);
+            // Cek apakah file ada sebelum hapus untuk menghindari error
+            if (Storage::disk('public')->exists($oldPath)) {
+                Storage::disk('public')->delete($oldPath);
+            }
         }
 
+        // Simpan avatar baru
         $path = $request->file('avatar')->store('avatars', 'public');
         $url = url('/storage/' . $path);
         
@@ -152,11 +159,13 @@ class AuthController extends Controller
 
         $user = Auth::user();
 
+        // Update PIN langsung via Query Builder untuk memastikan terupdate
         DB::table('users')->where('id', $user->id)->update([
             'pin' => $request->pin,
             'updated_at' => now()
         ]);
 
+        // Kirim notifikasi konfirmasi
         DB::table('notifications')->insert([
             'user_id' => $user->id,
             'title' => 'PIN Keamanan Aktif 🔐',

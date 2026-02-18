@@ -25,7 +25,6 @@ interface Product {
 }
 
 export const Home = () => {
-    // Tambahkan 'checkSession' dari store
     const { user, checkSession } = useAuthStore();
     const navigate = useNavigate();
     const [showBalance, setShowBalance] = useState(true);
@@ -40,10 +39,7 @@ export const Home = () => {
     const [isCartOpen, setIsCartOpen] = useState(false);
 
     useEffect(() => {
-        // [PERBAIKAN UTAMA]: Sinkronisasi data user dari MySQL setiap kali Home dibuka
-        // Ini untuk memastikan saldo dan status verifikasi selalu yang terbaru
         checkSession();
-
         if (user?.role === 'admin') {
             navigate('/admin/dashboard', { replace: true });
         }
@@ -181,9 +177,22 @@ export const Home = () => {
                                     <p className="text-2xl md:text-3xl font-bold text-white font-mono tracking-tight">{showBalance ? formatRupiah(userData.taproBalance) : 'Rp •••••••'}</p>
                                 </div>
                             </div>
-                            <div className="w-24 h-32 md:w-28 md:h-36 bg-gray-200 rounded-md border-[3px] border-white shadow-lg overflow-hidden shrink-0">
-                                <img src={user?.avatar_url || `https://ui-avatars.com/api/?name=${userData.name}&background=136f42&color=fff&size=200`} className="w-full h-full object-cover" crossOrigin="anonymous" />
+                            
+                            {/* [FIX]: FOTO PROFIL DENGAN FALLBACK OTOMATIS */}
+                            <div className="w-24 h-32 md:w-28 md:h-36 bg-gray-200 rounded-md border-[3px] border-white shadow-lg overflow-hidden shrink-0 flex items-center justify-center">
+                                <img 
+                                    src={user?.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(userData.name)}&background=136f42&color=fff&size=200`} 
+                                    alt="Foto Member"
+                                    className="w-full h-full object-cover"
+                                    // Jika gambar error (misal link 404), ganti ke UI Avatars
+                                    onError={(e) => {
+                                        const target = e.target as HTMLImageElement;
+                                        target.onerror = null; // Mencegah loop error
+                                        target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(userData.name)}&background=136f42&color=fff&size=200`;
+                                    }}
+                                />
                             </div>
+
                         </div>
                         <div className="bg-gradient-to-r from-[#f9a825] via-[#fbc02d] to-[#f9a825] h-8 md:h-10 flex items-center justify-between px-5 text-[10px] md:text-xs text-[#1b5e20] font-bold uppercase tracking-wider shadow-inner">
                             <span>Sejak: {userData.joinDate}</span>

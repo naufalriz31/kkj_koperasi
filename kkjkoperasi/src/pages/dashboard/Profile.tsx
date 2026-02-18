@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAuthStore } from '../../store/useAuthStore';
-import API from '../../api/api'; // Menggunakan Axios
+import API from '../../api/api'; 
 import { Input } from '../../components/ui/Input';
 import { Button } from '../../components/ui/Button';
 import { 
@@ -30,13 +30,13 @@ export const Profile = () => {
     const [oldPin, setOldPin] = useState(''); 
     const [pinLoading, setPinLoading] = useState(false);
 
+    // Inisialisasi Data User
     useEffect(() => {
         if (user) {
             setFormData({
-                // Sesuaikan 'name' dari database MySQL, jika di MySQL kolomnya 'name' maka pakai user.name
-                // Jika di frontend sebelumnya 'full_name', kita mapping di sini
-                full_name: user.name || '', 
-                phone: user.phone || '',
+                // Mengambil data dengan fallback yang aman
+                full_name: user.name || user.full_name || '', 
+                phone: user.phone || user.phone_number || '', 
             });
         }
     }, [user]);
@@ -52,43 +52,60 @@ export const Profile = () => {
         const confirm = window.confirm("Apakah Anda yakin ingin keluar dari aplikasi?");
         if (confirm) {
             try {
-                // Opsional: Panggil logout di backend untuk hapus token
                 await API.post('/logout'); 
             } catch (e) {
-                // Ignore error, lanjut logout di client
+                console.log("Logout backend failed, proceeding local logout");
             }
-            logout(); // Hapus token & user dari localStorage
+            logout();
             navigate('/login');
         }
     };
 
-    // --- UPLOAD IMAGE ---
+    // --- UPLOAD IMAGE (VALIDASI 10MB) ---
     const handleImageUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
         try {
-            setUploading(true);
-            const toastId = toast.loading('Mengupload foto...');
-
-            if (!event.target.files || event.target.files.length === 0) throw new Error('Pilih gambar terlebih dahulu.');
+            // 1. Cek apakah ada file
+            if (!event.target.files || event.target.files.length === 0) return;
 
             const file = event.target.files[0];
+
+            // 2. [FIX]: Validasi Ukuran File diperbesar jadi 10MB
+            // 10 * 1024 * 1024 bytes = 10MB
+            if (file.size > 10 * 1024 * 1024) {
+                toast.error("Ukuran foto terlalu besar! Maksimal 10MB.");
+                // Reset input agar user bisa memilih ulang
+                if (fileInputRef.current) fileInputRef.current.value = '';
+                return; 
+            }
+
+            // 3. Validasi Tipe File (Hanya Gambar)
+            if (!file.type.match(/^image\/(jpeg|png|jpg|gif)$/)) {
+                toast.error("Format file harus gambar (JPG/PNG).");
+                return;
+            }
+
+            setUploading(true);
+            const toastId = toast.loading('Mengupload foto...');
             
-            // Gunakan FormData untuk kirim file ke Laravel
             const formData = new FormData();
             formData.append('avatar', file);
 
-            // Endpoint Laravel: POST /profile/avatar
+            // Kirim ke Backend
             await API.post('/profile/avatar', formData, {
                 headers: { 'Content-Type': 'multipart/form-data' }
             });
 
-            await checkSession(); // Refresh data user agar avatar baru muncul
+            await checkSession(); // Refresh tampilan
             toast.success('Foto profil diperbarui!', { id: toastId });
 
         } catch (error: any) {
-            const msg = error.response?.data?.message || error.message || 'Gagal upload';
-            toast.error('Gagal upload: ' + msg);
+            // Menangkap error dari server (misal server menolak file > 2MB)
+            const msg = error.response?.data?.message || 'Gagal upload foto. Cek ukuran file.';
+            toast.error(msg);
         } finally {
             setUploading(false);
+            // Reset input file setelah selesai
+            if (fileInputRef.current) fileInputRef.current.value = '';
         }
     };
 
@@ -96,16 +113,14 @@ export const Profile = () => {
     const handleRemoveImage = async () => {
         const confirm = window.confirm("Hapus foto profil?");
         if (!confirm) return;
+        
         const toastId = toast.loading('Menghapus foto...');
         try {
-            // Endpoint Laravel: DELETE /profile/avatar
-            await API.delete('/profile/avatar');
-            
+            await API.delete('/profile/avatar'); 
             await checkSession();
             toast.success('Foto dihapus.', { id: toastId });
         } catch (error: any) {
-            const msg = error.response?.data?.message || 'Gagal hapus foto';
-            toast.error(msg, { id: toastId });
+            toast.error("Gagal menghapus foto", { id: toastId });
         }
     };
 
@@ -114,10 +129,11 @@ export const Profile = () => {
         e.preventDefault();
         setIsLoading(true);
         const toastId = toast.loading('Menyimpan perubahan...');
+        
         try {
-            // Endpoint Laravel: PUT /profile
-            await API.put('/profile', {
-                name: formData.full_name, // Mapping ke kolom 'name' di MySQL
+            // Mengirim data ke backend dengan key yang benar
+            await API.post('/profile/update', {
+                name: formData.full_name,
                 phone: formData.phone,
             });
 
@@ -139,8 +155,7 @@ export const Profile = () => {
             return;
         }
 
-        // Validasi PIN lama di frontend (opsional, backend juga akan validasi)
-        if (user?.pin) {
+        if (user?.pin) { 
              if (!oldPin) {
                 toast.error("Masukkan PIN Lama untuk verifikasi!");
                 return;
@@ -158,10 +173,9 @@ export const Profile = () => {
         setPinLoading(true);
         const toastId = toast.loading("Menyimpan PIN...");
         try {
-            // Endpoint Laravel: PUT /profile/pin
-            await API.put('/profile/pin', {
+            await API.post('/profile/pin', {
                 pin: pin,
-                current_pin: oldPin // Kirim PIN lama untuk validasi di backend
+                current_pin: oldPin 
             });
 
             toast.success("PIN Berhasil Disimpan!", { id: toastId });
@@ -192,14 +206,13 @@ export const Profile = () => {
                     <span className="text-sm font-bold">Kembali ke Dashboard</span>
                 </div>
 
-                {/* --- HEADER TITLE & TOMBOL EDIT PROFIL --- */}
+                {/* HEADER TITLE */}
                 <div className="flex flex-row justify-between items-end mb-6 gap-4">
                     <div>
                         <h1 className="text-2xl lg:text-3xl font-black text-gray-900 tracking-tight">Profil Saya</h1>
                         <p className="text-gray-500 mt-1 text-sm lg:text-base font-medium">Kelola informasi akun dan preferensi Anda.</p>
                     </div>
                     
-                    {/* 🔥 TOMBOL EDIT PROFIL 🔥 */}
                     {!isEditing && (
                         <Button 
                             onClick={() => setIsEditing(true)} 
@@ -213,14 +226,12 @@ export const Profile = () => {
 
                 {/* 1. KARTU PROFIL UTAMA */}
                 <div className="bg-white rounded-[2.5rem] shadow-xl shadow-green-900/5 border border-green-50 overflow-hidden relative mb-8">
-                    {/* Background Header Hijau */}
                     <div className="h-44 bg-gradient-to-br from-[#167d4a] via-[#136f42] to-[#0f5c35] relative">
                         <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-10"></div>
                         <div className="absolute top-0 right-0 w-64 h-64 bg-[#aeea00]/10 rounded-full -translate-y-1/2 translate-x-1/3 blur-3xl"></div>
                     </div>
 
                     <div className="px-6 lg:px-10 pb-10 relative">
-                        {/* Avatar */}
                         <div className="flex justify-between items-end -mt-16 mb-8">
                             <div className="relative group">
                                 <div className="w-32 h-32 rounded-full bg-white p-1.5 shadow-2xl">
@@ -248,22 +259,18 @@ export const Profile = () => {
                             </div>
                         </div>
 
-                        {/* Nama & Info */}
                         <div className="mb-8">
                             <h2 className="text-2xl lg:text-4xl font-black text-slate-900 tracking-tight mb-1">{user?.name}</h2>
                             <div className="flex flex-wrap items-center gap-3 text-slate-500 text-sm font-bold">
                                 <span>{user?.email}</span>
                                 <span className="hidden sm:inline w-1.5 h-1.5 rounded-full bg-slate-300"></span>
-                                <span>{user?.phone}</span>
-                                <span className={`md:hidden ml-2 px-2 py-0.5 rounded text-[10px] font-black uppercase border ${user?.role === 'admin' ? 'bg-rose-50 text-rose-600 border-rose-100' : 'bg-green-50 text-green-700 border-green-100'}`}>
-                                    {user?.role === 'admin' ? 'Admin' : 'Member'}
-                                </span>
+                                <span>{user?.phone || user?.phone_number || '-'}</span>
                             </div>
                         </div>
 
                         <div className="h-px bg-slate-100 mb-8"></div>
 
-                        {/* Form Profil */}
+                        {/* FORM PROFIL */}
                         <form onSubmit={handleUpdateProfile} className="space-y-8">
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6">
                                 <Input label="Nama Lengkap" icon={<User size={18} />} value={formData.full_name} onChange={(e) => setFormData({ ...formData, full_name: e.target.value })} disabled={!isEditing || isLoading} className={isEditing ? "bg-white border-green-200 focus:ring-green-100" : "bg-slate-50 border-transparent"} />
@@ -274,10 +281,9 @@ export const Profile = () => {
                                 <Input label="Nomor Induk Anggota (NIAK)" icon={<Shield size={18} />} value={user?.member_id || 'Belum Diterbitkan'} disabled={true} className="bg-slate-50/50 text-slate-400 border-slate-100 cursor-not-allowed font-mono tracking-wider font-bold" />
                             </div>
                             
-                            {/* Tombol Simpan / Batal */}
                             {isEditing && (
                                 <div className="flex items-center justify-end gap-3 pt-6 border-t border-slate-50 animate-in fade-in slide-in-from-bottom-2">
-                                    <Button type="button" variant="ghost" onClick={() => { setIsEditing(false); setFormData({ full_name: user?.name || '', phone: user?.phone || '' }); }} disabled={isLoading} className="text-slate-500 hover:text-rose-600 hover:bg-rose-50 font-bold">Batal</Button>
+                                    <Button type="button" variant="ghost" onClick={() => { setIsEditing(false); setFormData({ full_name: user?.name || '', phone: user?.phone || user?.phone_number || '' }); }} disabled={isLoading} className="text-slate-500 hover:text-rose-600 hover:bg-rose-50 font-bold">Batal</Button>
                                     <Button type="submit" isLoading={isLoading} className="bg-[#136f42] hover:bg-[#0f5c35] px-8 rounded-xl shadow-lg font-bold"> <Save size={18} className="mr-2" /> Simpan Perubahan </Button>
                                 </div>
                             )}
@@ -298,7 +304,7 @@ export const Profile = () => {
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
-                        {/* Kolom Kiri: Status PIN */}
+                        {/* Status PIN */}
                         <div>
                             <div className={`p-5 rounded-2xl border flex items-start gap-4 ${user?.pin ? 'bg-[#aeea00]/10 border-[#aeea00] text-[#0f5c35]' : 'bg-amber-50 border-amber-200 text-amber-800'}`}>
                                 <div className={`p-2.5 rounded-xl ${user?.pin ? 'bg-[#aeea00] text-[#0f5c35]' : 'bg-amber-100 text-amber-600'}`}>
@@ -307,61 +313,31 @@ export const Profile = () => {
                                 <div>
                                     <h3 className="font-black text-sm uppercase tracking-wide">{user?.pin ? 'PIN Transaksi Aktif' : 'PIN Belum Diatur'}</h3>
                                     <p className="text-xs mt-1 font-medium opacity-80 leading-relaxed">
-                                        {user?.pin
-                                            ? "Akun Anda terlindungi. PIN digunakan untuk verifikasi setiap transaksi keluar."
-                                            : "Segera atur PIN untuk mengaktifkan fitur transfer dan penarikan saldo."}
+                                        {user?.pin ? "Akun Anda terlindungi. PIN digunakan untuk verifikasi setiap transaksi keluar." : "Segera atur PIN untuk mengaktifkan fitur transfer dan penarikan saldo."}
                                     </p>
                                 </div>
                             </div>
-
                             {user?.pin && (
-                                <button
-                                    onClick={handleForgotPin}
-                                    className="mt-4 text-xs text-[#136f42] font-bold hover:underline flex items-center gap-2 ml-1"
-                                >
+                                <button onClick={handleForgotPin} className="mt-4 text-xs text-[#136f42] font-bold hover:underline flex items-center gap-2 ml-1">
                                     <HelpCircle size={14} /> Lupa PIN Saya?
                                 </button>
                             )}
                         </div>
 
-                        {/* Kolom Kanan: Form Ganti PIN */}
+                        {/* Form PIN */}
                         <div className="space-y-5">
                             {user?.pin && (
                                 <div>
                                     <label className="text-xs font-black text-slate-400 uppercase tracking-widest mb-2 block">PIN Lama</label>
-                                    <input
-                                        type="password"
-                                        maxLength={6}
-                                        placeholder="******"
-                                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3.5 text-lg font-black tracking-[0.5em] focus:ring-4 focus:ring-green-50 focus:border-[#136f42] outline-none transition-all"
-                                        value={oldPin}
-                                        onChange={(e) => setOldPin(e.target.value.replace(/[^0-9]/g, ''))}
-                                    />
+                                    <input type="password" maxLength={6} placeholder="******" className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3.5 text-lg font-black tracking-[0.5em] focus:ring-4 focus:ring-green-50 focus:border-[#136f42] outline-none transition-all" value={oldPin} onChange={(e) => setOldPin(e.target.value.replace(/[^0-9]/g, ''))} />
                                 </div>
                             )}
-
                             <div>
-                                <label className="text-xs font-black text-slate-400 uppercase tracking-widest mb-2 block">
-                                    {user?.pin ? 'PIN Baru' : 'Buat PIN Baru (6 Angka)'}
-                                </label>
-                                <input
-                                    type="password"
-                                    maxLength={6}
-                                    placeholder="******"
-                                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3.5 text-lg font-black tracking-[0.5em] focus:ring-4 focus:ring-green-50 focus:border-[#136f42] outline-none transition-all"
-                                    value={pin}
-                                    onChange={(e) => setPin(e.target.value.replace(/[^0-9]/g, ''))}
-                                />
+                                <label className="text-xs font-black text-slate-400 uppercase tracking-widest mb-2 block">{user?.pin ? 'PIN Baru' : 'Buat PIN Baru (6 Angka)'}</label>
+                                <input type="password" maxLength={6} placeholder="******" className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3.5 text-lg font-black tracking-[0.5em] focus:ring-4 focus:ring-green-50 focus:border-[#136f42] outline-none transition-all" value={pin} onChange={(e) => setPin(e.target.value.replace(/[^0-9]/g, ''))} />
                             </div>
-
-                            <Button
-                                onClick={handleSavePin}
-                                isLoading={pinLoading}
-                                disabled={pin.length < 6 || (!!user?.pin && oldPin.length < 6)}
-                                className="w-full bg-[#136f42] hover:bg-[#0f5c35] text-white py-4 rounded-xl font-bold shadow-lg shadow-green-900/20 disabled:opacity-50 active:scale-95 transition-all"
-                            >
-                                <KeyRound size={18} className="mr-2" />
-                                {user?.pin ? "Ganti PIN" : "Simpan PIN"}
+                            <Button onClick={handleSavePin} isLoading={pinLoading} disabled={pin.length < 6 || (!!user?.pin && oldPin.length < 6)} className="w-full bg-[#136f42] hover:bg-[#0f5c35] text-white py-4 rounded-xl font-bold shadow-lg shadow-green-900/20 disabled:opacity-50 active:scale-95 transition-all">
+                                <KeyRound size={18} className="mr-2" /> {user?.pin ? "Ganti PIN" : "Simpan PIN"}
                             </Button>
                         </div>
                     </div>
@@ -369,16 +345,10 @@ export const Profile = () => {
 
                 {/* 3. LOGOUT BUTTON */}
                 <div className="flex flex-col items-center gap-4 mb-20">
-                    <button 
-                        onClick={handleLogout}
-                        className="w-full md:w-auto md:min-w-[300px] bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 font-bold py-4 rounded-2xl flex items-center justify-center gap-2 transition-all active:scale-95 shadow-sm"
-                    >
-                        <LogOut size={20} strokeWidth={2.5} />
-                        Keluar Aplikasi
+                    <button onClick={handleLogout} className="w-full md:w-auto md:min-w-[300px] bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 font-bold py-4 rounded-2xl flex items-center justify-center gap-2 transition-all active:scale-95 shadow-sm">
+                        <LogOut size={20} strokeWidth={2.5} /> Keluar Aplikasi
                     </button>
-                    <p className="text-center text-slate-300 text-[10px] font-black uppercase tracking-[0.3em]">
-                        Koperasi KKJ App v1.0.2
-                    </p>
+                    <p className="text-center text-slate-300 text-[10px] font-black uppercase tracking-[0.3em]">Koperasi KKJ App v1.0.2</p>
                 </div>
 
             </div>
